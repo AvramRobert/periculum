@@ -1,2 +1,17 @@
 # idea
 /.idea
+
+# misc
+data_readers.clj
+hs_err_pid*.log
+
+# pom
+pom.xml
+pom.xml.asc
+
+# build
+**/gen
+**/target
+*~
+.*
+
