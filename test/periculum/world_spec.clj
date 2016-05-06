@@ -1,4 +1,4 @@
-(ns periculum.world.world-spec
+(ns periculum.world-spec
   (:use [periculum.world])
   (:use [clojure.test])
   (:require
@@ -17,13 +17,13 @@
     (every? #(= ((lattice 2 3) %) (expected-distro %)) pairs)))
 
 (defspec lattice-integrity
-   100
-  (prop/for-all [samples (gen/such-that
-                           #(and
-                             (not-empty %)
-                             (even? (count %))) (gen/vector gen/pos-int)
-                           100)]
-       (same-distro? samples)))
+         100
+         (prop/for-all [samples (gen/such-that
+                                  #(and
+                                    (not-empty %)
+                                    (even? (count %))) (gen/vector gen/pos-int)
+                                  100)]
+                       (same-distro? samples)))
 
 (def exp-world-lattice
   [(pos 0 0) (pos 1 0) (pos 2 0) (pos 3 0) ; gap ;

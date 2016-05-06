@@ -1,13 +1,10 @@
 (ns periculum.world
-  (use clojure.set))
+  (use clojure.set)
+  (use [periculum.coll.more :only [empty-vec]]))
 
 (def shapes '(:rectangle :circle))
 
 (defrecord Pos [x y])
-
-; Actions need only have a velocity. This is valid also for jumping. When you jump, your velocity is how fast you jump
-(defrecord Act [velocity
-                orientation])
 
 (defrecord Struct [length
                    height
@@ -16,20 +13,8 @@
 (defrecord Entity [label
                    shape
                    position
+                   components
                    solid?])
-
-; Making the orientation part of the Markov state, would actually simplify some things.
-(defrecord State [position
-                  orientation])
-
-; FIXME: Take a look at the actions later. This might not be the best way to represent them
-(def actions {:standing (->Act 1 [0 0])
-              :walk-left (->Act 1 [-1 0])
-              :walk-right (->Act 1 [1 0])
-              :run-left (->Act 2 [-1 0])
-              :run-right (->Act 2 [1 0])
-              :jump (->Act 2 [0 0])
-              })
 
 (defn base [start length]
   (map #(->Pos (+ (:x start) %) (:y start)) (range 0 length)))
@@ -44,7 +29,7 @@
                               (update item :y #(+ % index))) items)) all)))))
 
 (defn solidify [position]
-  (->Entity "Solid" :rectangle, position, true))
+  (->Entity "Solid" :rectangle position empty-vec true))
 
 (defn solidify-many [lattice]
   (map solidify lattice))
@@ -86,7 +71,7 @@
                    :platforms [<length, pos>]
                    }))
 
-; FIXME: Create macro for world creation
+; FIXME: Write macro for world creation
 ; FIXME: It would be quite practical to have something like `when-all`, which only executes the block when `all` bindings are non-nil
 ; The world itself has a width and a length, which I should take into account somewhere, because that is how I know its bounds
 (defn make-world [config]
