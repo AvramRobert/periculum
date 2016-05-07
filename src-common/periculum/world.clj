@@ -65,17 +65,24 @@
     (->Struct length 1 pos)))
 
 (comment
-  (def world-conf {:floor     <length>
+  (def world-conf {:floor     [<length, pos>]
                    :holes     [<pos>]
                    :walls     [<length, height, pos>]
                    :platforms [<length, pos>]
+                   ;:other     [<pos> <pos> <pos>]           ; other things that can move
                    }))
 
 ; FIXME: Write macro for world creation
 ; FIXME: It would be quite practical to have something like `when-all`, which only executes the block when `all` bindings are non-nil
 ; The world itself has a width and a length, which I should take into account somewhere, because that is how I know its bounds
 (defn make-world [config]
-  (let [fl ((make-platform (:floor config) (:holes config)) 0 0)
-        walls (map #((make-solid (:length %) (:height %)) (:start-pos %)) (:walls config))
-        platforms (map #((make-platform (:length %) []) (:start-pos %)) (:platforms config))]
-    (flatten (into (into fl walls) platforms))))
+  (let [{floor-conf :floor
+         holes-conf :holes
+         walls-conf :walls
+         platforms-conf :platforms
+         ;other-conf :other
+         } config
+        floor ((make-platform (:length floor-conf) holes-conf) (:start-pos floor-conf))
+        walls (map #((make-solid (:length %) (:height %)) (:start-pos %)) walls-conf)
+        platforms (map #((make-platform (:length %) empty-vec) (:start-pos %)) platforms-conf)]
+    (flatten [floor walls platforms])))

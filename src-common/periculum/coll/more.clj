@@ -12,3 +12,9 @@
 
 (defn max-by [p coll]
   (->> coll (map p) (apply max)))
+
+(defn or-else [f else]
+  (fn [x]
+    (if-let [arg x]
+      (f x)
+      else)))

@@ -24,15 +24,18 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
+(def R-tic -1)
+(def R-solid -5)
+(def R-end 20)
 
-(def actions {:stand      (->Action 0 1 [0 0])
-              :walk-left  (->Action 1 1 [-1 0])
-              :walk-right (->Action 1 1 [1 0])
-              :run-left   (->Action 2 1 [-1 0])
-              :run-right  (->Action 2 1 [1 0])
-              :jump       (->Action (jump-velocity G H-max) T-apex [0 1])
-              :fall       (->Action G 1 [0 -1])
-              })
+(def all-actions {:stand      (->Action 0 1 [0 0])
+                  :walk-left  (->Action 1 1 [-1 0])
+                  :walk-right (->Action 1 1 [1 0])
+                  :run-left   (->Action 2 1 [-1 0])
+                  :run-right  (->Action 2 1 [1 0])
+                  :jump       (->Action (jump-velocity G H-max) T-apex [0 1])
+                  :fall       (->Action G 1 [0 -1])
+                  })
 
 (defn update-pos [pos amount orient]
   (let [xed (assoc pos :x (+ (:x pos) (* amount (nth orient 0))))
@@ -41,6 +44,9 @@
 
 (defn out? [pos]
   (or (neg? (:x pos)) (neg? (:y pos))))
+
+(defn hole? [state]
+  (zero? (:y (:position state))))
 
 (defn solid? [cur-pos lookup]
   (let [item (some #(:solid? %) (lookup cur-pos))]
@@ -51,7 +57,7 @@
     (or (solid? beneath lookup) (out? cur-pos))))
 
 (defn interval [key-actions]
-  (let [maximum (max-by #(:velocity %) (map #(% actions) key-actions))]
+  (let [maximum (max-by #(:velocity %) (map #(% all-actions) key-actions))]
     (if (zero? maximum)
       1
       maximum)))
@@ -72,7 +78,7 @@
                    time        :time
                    orientation :orientation} action
                   step (Math/round ^float (/ velocity time))]
-              (update-pos npos step orientation))) pos (map #(% actions) acts)))
+              (update-pos npos step orientation))) pos (map #(% all-actions) acts)))
 
 (defn <+> [start actions]
   (let [t (/ 1 (interval actions))
@@ -123,11 +129,17 @@
           [t descent] (fall (last ascent) lookup other)]
       (tuples/tuple (+ t T-apex) (into ascent descent)))))
 
-(defn eta [world]
+
+(defn stateify [time-position action]
+  (let [[time ps] time-position]
+    (tuples/tuple time (map #(->State % action) ps))
+    ))
+
+(defn eta-one [world]
   (fn [state]
     (find-some #(= (:position state) (:position %)) world)))
 
-(defn eta-sec [world]
+(defn eta [world]
   (fn [state]
     (filter #(= (:position state) (:position %)) world)))
 
@@ -135,17 +147,36 @@
   (fn [position]
     (filter #(= (:position %) position) world)))
 
-; FIXME: Test omega
 (defn omega [world]
   (fn [state action]
     (let [previous (:previous-action state)
           position (:position state)
           lookup (eta-pos world)]
       (match [action]
-             [:stand] ((move lookup) position :stand)
-             [:walk-right] ((move lookup) position :walk-right)
-             [:walk-left] ((move lookup) position :walk-left)
-             [:run-right] ((move lookup) position :run-right)
-             [:run-left] ((move lookup) position :run-left)
-             [:jump] ((jump lookup) position previous)))))
+             [:jump] (stateify ((jump lookup) position previous) previous)
+             :else (stateify ((move lookup) position action) action)))))
 
+(defn reward [world is-end?]
+  (let [η (eta world)
+        Ω (omega world)]
+    (fn [state action]
+      (let [[time path] (Ω state action)
+            hits (->> path (map η) (flatten) (filter #(:solid? %)))
+            holes (filter #(hole? %) path)
+            end ((or-else (fn [_]
+                            R-end) 0) (find-some #(is-end? %) path))]
+        (+ (* time R-tic)
+           (* R-solid (count hits))
+           (* R-solid (count holes))
+           end)))))
+
+; FIXME: Should the transition function teleport the agent back to his starting position if he falls in a hole?
+(defn transition [world is-end?]
+  (let [Ω (omega world)]
+    (fn [state action]
+      (let [[_ path] (Ω state action)]
+        (if-let [end (find-some is-end? path)]
+          end
+          (last path))))))
+
+(def actions (-> all-actions (drop-last) (keys)))

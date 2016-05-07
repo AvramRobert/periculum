@@ -16,7 +16,7 @@
   (let [world (solidify-many latt)
         item (rand-nth world)
         state (->State (:position item) :stand)
-        lookup (eta world)]
+        lookup (eta-one world)]
     (= (lookup state) item)))
 
 (defn by-eta-sec? [latt]
@@ -24,7 +24,7 @@
         item (rand-nth world)
         items (filter #(= item %) world)
         state (->State (:position item) :stand)
-        lookup (eta-sec world)]
+        lookup (eta world)]
     (= (lookup state) items)))
 
 (defspec find-first
@@ -46,8 +46,8 @@
          (prop/for-all [ps (gen/such-that #(not-empty %) pos-gen)]
                        (by-eta-sec? ps)))
 
-(def world-config {:floor     15
-                   :holes     [(pos 3 0) (pos 4 0) (pos 13 0) (pos 14 0) (pos 15 0)]
+(def world-config {:floor     (m-struct 15 0 (pos 0 0))
+                   :holes     [(pos 3 0) (pos 13 0) (pos 14 0) (pos 15 0)]
                    :walls     [(m-struct 2 3 (pos 5 1)) (m-struct 2 3 (pos 10 1))]
                    :platforms empty-vec
                    })
@@ -56,6 +56,9 @@
 (def lookup (eta-pos world))
 (def movement (move lookup))
 (def jumping (jump lookup))
+(def Ω (omega world))
+(def rewardf (reward world #(= (:position %) (pos 12 1))))
+(def transitionf (transition world #(= (:position %) (pos 12 1))))
 
 (deftest move-properly
   (let [start (pos 0 1)
@@ -75,18 +78,22 @@
         ]
     (is (and
           (= path-wr expected-w-right)
-          (= t-wr 1)
+          (= t-wr 1)))
+    (is (and
           (= path-wl expected-w-left)
-          (= t-wl 1)
+          (= t-wl 1)))
+    (is (and
           (= path-rr expected-r-right)
-          (= t-rr 1)
+          (= t-rr 1)))
+    (is (and
           (= path-rl expected-r-left)
-          (= t-rl 1)
+          (= t-rl 1)))
+    (is (and
           (= path-s expected-s)
-          (= t-s 1)
+          (= t-s 1)))
+    (is (and
           (= path-fwr expected-f-right)
-          (= t-fwr 2)
-          ))))
+          (= t-fwr 2)))))
 
 (deftest fall-properly
   (let [start1 (pos 7 4)
@@ -100,27 +107,88 @@
         ]
     (is (and
           (= path-ds expected-ds)
-          (= t-s-desc 2)
+          (= t-s-desc 2)))
+    (is (and
           (= path-dwr expected-dwr)
-          (= t-wr-desc 2)
+          (= t-wr-desc 2)))
+    (is (and
           (= path-drr expected-drr)
-          (= t-rr-desc 2)
-          ))))
+          (= t-rr-desc 2)))))
 
 (deftest jump-properly
   (let [start1 (pos 0 1)
-        [t-js path-js] (jumping start1 :stand)            ; jump standing
+        [t-js path-js] (jumping start1 :stand)              ; jump standing
         expected-js [(pos 0 1) (pos 0 2) (pos 0 3) (pos 0 4) (pos 0 5) (pos 0 5) (pos 0 4) (pos 0 3) (pos 0 2) (pos 0 1)]
         start2 (pos 3 1)
-        [t-jwr path-jwr] (jumping start2 :walk-right)     ; jump walking right
+        [t-jwr path-jwr] (jumping start2 :walk-right)       ; jump walking right
         expected-jwr [(pos 3 1) (pos 4 2) (pos 4 3) (pos 5 4) (pos 5 5) (pos 5 5) (pos 6 4)]
         ]
     (is (and
           (= path-js expected-js)
-          (= t-js 5)
+          (= t-js 5)))
+    (is (and
           (= path-jwr expected-jwr)
-          (= t-jwr 3)
-          ))))
+          (= t-jwr 3)))))
 
+(deftest omega-test
+  (let [state1 (->State (pos 0 1) :walk-right)
+        [t-rr path-rr] (Ω state1 :run-right)
+        expected-rr [(pos 0 1) (pos 1 1) (pos 2 1)]
+        state2 (->State (pos 1 1) :run-right)
+        [t-s path-s] (Ω state2 :stand)
+        expected-s [(pos 1 1)]
+        state3 (->State (pos 3 1) :walk-right)
+        [t-jwr path-jwr] (Ω state3 :jump)
+        expected-jwr [(pos 3 1) (pos 4 2) (pos 4 3) (pos 5 4) (pos 5 5) (pos 5 5) (pos 6 4)]]
+    (is (and
+          (= (map #(:position %) path-rr) expected-rr)
+          (= (-> path-rr (first) (:previous-action)) :run-right)
+          (= t-rr 1)
+          ))
+    (is (and
+          (= (map #(:position %) path-s) expected-s)
+          (= (-> path-s (first) (:previous-action)) :stand)
+          (= t-s 1)))
+    (is (and
+          (= (map #(:position %) path-jwr) expected-jwr)
+          (= (-> path-jwr (first) (:previous-action) :walk-right))
+          (= t-jwr 3)))))
+
+(deftest reward-test
+  (let [state1 (->State (pos 1 1) :stand)
+        res-walk-right (rewardf state1 :walk-right)
+        state2 (->State (pos 2 1) :stand)
+        res-walk-right-fall (rewardf state2 :walk-right)
+        state3 (->State (pos 6 4) :stand)
+        res-walk-right-fall-longer (rewardf state3 :walk-right)
+        state4 (->State (pos 11 4) :stand)
+        res-walk-fall-win (rewardf state4 :walk-right)
+        state5 (->State (pos 4 1) :walk-right)
+        res-jump-hit-wall (rewardf state5 :jump)
+        state6 (->State (pos 0 1) :stand)
+        res-run (rewardf state6 :run-right)]
+    (is (= -1 res-walk-right))
+    (is (= -6 res-walk-right-fall))
+    (is (= -2 res-walk-right-fall-longer))
+    (is (= 18 res-walk-fall-win))
+    (is (= -15 res-jump-hit-wall))
+    (is (= -1 res-run))
+    ))
+
+(deftest transition-test
+  (let [state1 (->State (pos 1 1) :stand)
+        res-walk-right (transitionf state1 :walk-right)
+        state2 (->State (pos 2 1) :stand)
+        res-walk-right-fall (transitionf state2 :walk-right)
+        state3 (->State (pos 10 4) :stand)
+        res-run-fall-win (transitionf state3 :run-right)]
+    (is (= res-walk-right (->State (pos 2 1) :walk-right)))
+    (is (= res-walk-right-fall (->State (pos 3 0) :walk-right)))
+    (is (= res-run-fall-win (->State (pos 12 1) :run-right)))))
+
+(deftest action-test
+  (let [acts (actions)
+        ks (-> all-actions (keys) (drop-last))]
+    (is (= acts ks))))
 
 (run-tests)

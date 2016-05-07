@@ -32,7 +32,7 @@
    (pos 4 5) (pos 5 5) (pos 6 5) ; platform
    ])
 
-(def config {:floor 11
+(def config {:floor (m-struct 11 0 (pos 0 0))
              :holes [(pos 4 0) (pos 5 0)]
              :walls [(m-struct 2 3 (pos 2 1))]
              :platforms [(m-struct 3 (pos 4 5))]})
