@@ -69,6 +69,7 @@
                    :holes     [<pos>]
                    :walls     [<length, height, pos>]
                    :platforms [<length, pos>]
+                   ;:actions   {<actions>}
                    ;:other     [<pos> <pos> <pos>]           ; other things that can move
                    }))
 

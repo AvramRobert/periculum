@@ -8,6 +8,23 @@
     [clojure.test.check.properties :as prop]
     [clojure.test.check.clojure-test :refer [defspec]]))
 
+(def test-h-max 4)
+(def test-t-apex 2)
+(def test-G (gravity test-h-max test-t-apex))
+(def test-rewards {:tic -1
+                   :solid    -5
+                   :end      20
+                  })
+
+(def test-actions {:stand     (->Action 0 1 [0 0])
+                  :walk-left  (->Action 1 1 [-1 0])
+                  :walk-right (->Action 1 1 [1 0])
+                  :run-left   (->Action 2 1 [-1 0])
+                  :run-right  (->Action 2 1 [1 0])
+                  :jump       (->Action (Math/round ^Float (jump-velocity test-G test-h-max)) test-t-apex [0 1])
+                  :fall       (->Action test-G 1 [0 -1])
+                  })
+
 (defn is-found? [coll]
   (let [item (rand-nth coll)]
     (= (find-some #(= % item) coll) item)))
@@ -16,7 +33,7 @@
   (let [world (solidify-many latt)
         item (rand-nth world)
         state (->State (:position item) :stand)
-        lookup (eta-one world)]
+        lookup (eta-one world {})]
     (= (lookup state) item)))
 
 (defn by-eta-sec? [latt]
@@ -24,7 +41,7 @@
         item (rand-nth world)
         items (filter #(= item %) world)
         state (->State (:position item) :stand)
-        lookup (eta world)]
+        lookup (eta world {})]
     (= (lookup state) items)))
 
 (defspec find-first
@@ -53,12 +70,17 @@
                    })
 
 (def world (make-world world-config))
-(def lookup (eta-pos world))
+(def lookup (eta-pos world test-actions))
 (def movement (move lookup))
 (def jumping (jump lookup))
-(def Ω (omega world))
-(def rewardf (reward world #(= (:position %) (pos 12 1))))
-(def transitionf (transition world #(= (:position %) (pos 12 1))))
+(def Ω (omega world test-actions))
+(def rewardf (reward world
+                     test-actions
+                     test-rewards
+                     #(= (:position %) (pos 12 1))))
+(def transitionf (transition world
+                             test-actions
+                             #(= (:position %) (pos 12 1))))
 
 (deftest move-properly
   (let [start (pos 0 1)
@@ -122,7 +144,8 @@
         start2 (pos 3 1)
         [t-jwr path-jwr] (jumping start2 :walk-right)       ; jump walking right
         expected-jwr [(pos 3 1) (pos 4 2) (pos 4 3) (pos 5 4) (pos 5 5) (pos 5 5) (pos 6 4)]
-        ]
+        start3 (pos 7 1)
+        [_ path] (jumping start3 :run-right)]
     (is (and
           (= path-js expected-js)
           (= t-js 5)))
@@ -187,8 +210,8 @@
     (is (= res-run-fall-win (->State (pos 12 1) :run-right)))))
 
 (deftest action-test
-  (let [acts (actions)
-        ks (-> all-actions (keys) (drop-last))]
+  (let [acts actions
+        ks (-> test-actions (keys) (drop-last))]
     (is (= acts ks))))
 
 (run-tests)

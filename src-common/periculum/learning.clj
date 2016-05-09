@@ -2,7 +2,9 @@
   (:use [periculum.world])
   (:use [periculum.coll.more])
   (:require [clj-tuple :as tuples])
-  (:require [clojure.core.match :refer [match]]))
+  (:require [clojure.core.match :refer [match]])
+  (:require [play-clj.math :as gmath])
+  (import (com.badlogic.gdx.math Vector2)))
 
 (defrecord Action [velocity
                    time
@@ -24,16 +26,17 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
-(def R-tic -1)
-(def R-solid -5)
-(def R-end 20)
+(def Rewards {:tic -1
+              :solid -5
+              :end 20
+              })
 
 (def all-actions {:stand      (->Action 0 1 [0 0])
                   :walk-left  (->Action 1 1 [-1 0])
                   :walk-right (->Action 1 1 [1 0])
                   :run-left   (->Action 2 1 [-1 0])
                   :run-right  (->Action 2 1 [1 0])
-                  :jump       (->Action (jump-velocity G H-max) T-apex [0 1])
+                  :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
                   :fall       (->Action G 1 [0 -1])
                   })
 
@@ -56,13 +59,13 @@
   (let [beneath (pos (:x cur-pos) (dec (:y cur-pos)))]
     (or (solid? beneath lookup) (out? cur-pos))))
 
-(defn interval [key-actions]
-  (let [maximum (max-by #(:velocity %) (map #(% all-actions) key-actions))]
+(defn interval [actions]
+  (let [maximum (max-by #(:velocity %) actions)]
     (if (zero? maximum)
       1
       maximum)))
 
-(defn interpolation [p1 p2]
+  (defn interpolation [p1 p2]
   (fn [t]
     (let [nx (+ (:x p1) (* t (- (:x p2) (:x p1))))
           ny (+ (:y p1) (* t (- (:y p2) (:y p1))))]
@@ -72,38 +75,65 @@
 (defn +++ [t inter]
   (map #(inter %) (range 0.0 (+ 1.0 t) t)))
 
-(defn endpoint [pos acts]
+(defn endpoint [pos actions]
   (reduce (fn [npos action]
             (let [{velocity    :velocity
                    time        :time
                    orientation :orientation} action
                   step (Math/round ^float (/ velocity time))]
-              (update-pos npos step orientation))) pos (map #(% all-actions) acts)))
+              (update-pos npos step orientation))) pos actions))
+
+(defn pos-to-vec [pos]
+  (gmath/vector-2 (double (:x pos)) (double (:y pos))))
+
+(defn midpoint [start end]
+  (let [x (->(/ (+ (:x start) (:x end)) 2) (Math/floor) (Math/round))
+        y (-> (/ (+ (:y start) (:y end)) 2) (Math/ceil) (Math/round))]
+    (pos x y)))
 
 (defn <+> [start actions]
+  "Simple Linear interpolation"
   (let [t (/ 1 (interval actions))
         end (endpoint start actions)
         inter-f (interpolation start end)]
     (distinct (+++ t inter-f))))
+
+(defn <++> [linear]
+  "Bezier Cubic interpolation"
+  (let [points [(-> linear (first) (pos-to-vec))
+                (-> linear (mid) (pos-to-vec))
+                (-> linear (last) (pos-to-vec))]
+        spline (gmath/bezier points)
+        values (for [t (range 0.0 1.0 0.1)]
+                 (.valueAt spline (new Vector2) t))]
+    (distinct
+      (map (fn [v]
+             (pos (Math/round (.x v)) (Math/round (.y v)))) values))))
+
+(defn deref-actions [actions lookup]
+  (map #(lookup %) actions))
 
 (defn descend [lookup]
   (fn [pos actions]
     (loop [t 0
            cur pos
            visited (tuples/tuple)]
-      (let [interpolated (<+> cur (conj actions :fall))
+      (let [todo (deref-actions (conj actions :fall) lookup)
+            interpolated (<+> cur todo)
             not-solid? #(not (solid? % lookup))]
         (if (every? not-solid? interpolated)
           (recur (inc t) (last interpolated) (into visited (drop-last interpolated)))
           (let [non-solid (take-while not-solid? interpolated)]
             (tuples/tuple (inc t) (into visited non-solid))))))))
 
-(defn ascend [start other-acts]
-  (let [with-jump (conj other-acts :jump)]
-    (reduce
-      (fn [ps _]
-        (let [path (<+> (last ps) with-jump)]
-          (into ps (next path)))) (tuples/tuple start) (range 0 T-apex))))
+(defn ascend [lookup]
+  (fn [start other-acts]
+    (let [T-apex (:time (lookup :jump))
+          todo (deref-actions (conj other-acts :jump) lookup)]
+      (reduce
+        (fn [ps _]
+          (let [path (<+> (last ps) todo)]
+            (into ps (next path)))) (tuples/tuple start) (range 0 T-apex)))))
 
 (defn fall
   ([pos lookup actions]
@@ -113,7 +143,8 @@
 
 (defn move [lookup]
   (fn [pos action]
-    (let [interpolated (<+> pos [action])
+    (let [todo (deref-actions [action] lookup)
+          interpolated (<+> pos todo)
           can-stand? #(empty-beneath? % lookup)]
       (if (every? can-stand? interpolated)
         (tuples/tuple 1 interpolated)
@@ -124,8 +155,9 @@
 
 (defn jump [lookup]
   (fn [pos other-action]
-    (let [other (tuples/tuple other-action)
-          ascent (ascend pos other)
+    (let [T-apex (:time (lookup :jump))
+          other (tuples/tuple other-action)
+          ascent ((ascend lookup) pos other)
           [t descent] (fall (last ascent) lookup other)]
       (tuples/tuple (+ t T-apex) (into ascent descent)))))
 
@@ -135,48 +167,75 @@
     (tuples/tuple time (map #(->State % action) ps))
     ))
 
-(defn eta-one [world]
-  (fn [state]
-    (find-some #(= (:position state) (:position %)) world)))
+(defn eta-gen [world actions f]
+  (fn [item]
+    (if (keyword? item)
+      (item actions)
+      (f item world))))
 
-(defn eta [world]
-  (fn [state]
-    (filter #(= (:position state) (:position %)) world)))
+(defn eta-one [world actions]
+  (eta-gen world
+           actions
+           (fn [item -world]
+             (find-some #(= (:position item) (:position %)) -world))))
 
-(defn eta-pos [world]
-  (fn [position]
-    (filter #(= (:position %) position) world)))
+(defn eta [world actions]
+  (eta-gen world
+           actions
+           (fn [item -world]
+             (filter #(= (:position item) (:position %)) -world))))
 
-(defn omega [world]
+
+(defn eta-pos [world actions]
+  (eta-gen world
+           actions
+           (fn [item -world]
+             (filter #(= (:position %) item) -world))))
+
+(defn omega [world actions]
   (fn [state action]
     (let [previous (:previous-action state)
           position (:position state)
-          lookup (eta-pos world)]
+          lookup (eta-pos world actions)]
       (match [action]
              [:jump] (stateify ((jump lookup) position previous) previous)
              :else (stateify ((move lookup) position action) action)))))
 
-(defn reward [world is-end?]
-  (let [η (eta world)
-        Ω (omega world)]
+(defn reward-com [world actions rewards is-end?]
+  (let [η (eta world actions)
+        Ω (omega world actions)]
     (fn [state action]
       (let [[time path] (Ω state action)
             hits (->> path (map η) (flatten) (filter #(:solid? %)))
             holes (filter #(hole? %) path)
             end ((or-else (fn [_]
-                            R-end) 0) (find-some #(is-end? %) path))]
-        (+ (* time R-tic)
-           (* R-solid (count hits))
-           (* R-solid (count holes))
+                            (:end rewards)) 0) (find-some #(is-end? %) path))]
+        (+ (* time (:tic rewards))
+           (* (count hits) (:solid rewards))
+           (* (count holes) (:solid rewards))
            end)))))
 
 ; FIXME: Should the transition function teleport the agent back to his starting position if he falls in a hole?
-(defn transition [world is-end?]
-  (let [Ω (omega world)]
+(defn transition-com [world actions is-end?]
+  (let [Ω (omega world actions)]
     (fn [state action]
       (let [[_ path] (Ω state action)]
         (if-let [end (find-some is-end? path)]
           end
           (last path))))))
+
+(defn reward
+  ([world is-end?]
+    (reward-com world all-actions Rewards is-end?))
+  ([world actions is-end?]
+    (reward-com world actions Rewards is-end?))
+  ([world actions rewards is-end?]
+    (reward-com world actions rewards is-end?)))
+
+(defn transition
+  ([world is-end?]
+    (transition-com world all-actions is-end?))
+  ([world actions is-end?]
+    (transition-com world actions is-end?)))
 
 (def actions (-> all-actions (drop-last) (keys)))
