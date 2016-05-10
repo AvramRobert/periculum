@@ -1,7 +1,8 @@
 (ns periculum.rl
-  (:require [clojure.core.async :as async])
-  (:use (periculum.coll.more))
-  (:use (handy.map-values)))
+  (:require [clojure.core.async :as async]
+            [clj-tuple :as tuples])
+  (:use [periculum.coll.more])
+  (:use [handy.map-values]))
 
 (def empty-data {:q-values {}
                  :counts   {}
@@ -46,10 +47,13 @@
   (map-indexed (fn [idx sample]
                  (* (:reward sample) (Math/pow γ idx))) chain))
 
+;; tested
 (defn Gt [chain γ]
-  (consume (fn [elm rem]
-             (assoc elm :reward (reduce + (discount rem γ)))) chain))
+  (consume (fn [sample rem]
+             (let [discounted (reduce + (discount rem γ))]
+               (assoc sample :reward discounted))) chain))
 
+;; tested
 (defn lazy-traj [policy
                  action-f
                  reward-f
@@ -67,8 +71,8 @@
 
 (defn Q
   ([data SA]
-    ((or-else identity 0)
-      (get-in data [:q-values (:state SA) (:action SA)])))
+   ((or-else identity 0)
+     (get-in data [:q-values (:state SA) (:action SA)])))
   ([data S A]
    ((or-else identity 0)
      (get-in data [:q-values S A]))))
@@ -81,6 +85,10 @@
    ((or-else identity 0)
      (get-in data [:counts S A]))))
 
+(defn from-chain [data chain f]
+  (reduce (fn [new-data sample]
+            (update-in new-data [(:state sample) (:action sample)]
+                       #(f % sample))) data chain))
 
 ;; Monte Carlo
 
@@ -92,7 +100,7 @@
 
 (defn mc-eval [data chain]
   (let [γ (:gamma data)
-        discounted (Gt chain γ)
+        R-n (Gt chain γ)
         updated-data (update data :counts #(every-visit-inc % chain))]
     (reduce
       (fn [new-data sample]
@@ -101,7 +109,19 @@
                R :reward} sample
               N-SA (C new-data (->Pair S A))]
           (update-in new-data [S A]
-                     #(mc-update % R N-SA)))) updated-data discounted)))
+                     #(mc-update % R N-SA)))) updated-data R-n)))
+
+(defn mc-eval [data chain]
+  (let [γ (:gamma data)
+        R-n (Gt chain γ)
+        updated-data (update data :counts #(every-visit-inc % chain))]
+    (from-chain updated-data R-n
+                (fn [Q-SA sample]
+                  (let [{S :state
+                         A :action
+                         R :reward} sample
+                        N-SA (C updated-data S A)]
+                    (mc-update Q-SA R N-SA))))))
 
 ;; FIXME: add GLIE control schedule
 (defn monte-carlo [policy
@@ -119,17 +139,18 @@
 (defn sarsa-n-update [Q-SA Gt-SA α]
   (+ Q-SA (* α (- Gt-SA Q-SA))))
 
-(defn sarsa-n-eval [data chain S'A']
+(defn sarsa-n-eval [data chain]
   (let [γ (:gamma data)
-        R-n-1 (Gt chain γ)
-        γ-S'A' (Math/pow (count R-n-1) γ)
-        Q-S'A' (Q data S'A')
-        γ*Q-S'A' (* γ-S'A' Q-S'A')
-        R-n (conj R-n-1 (->Sample (:state S'A') (:action S'A') γ*Q-S'A'))]
-    (reduce
-      (fn [new-data sample]
-        (update-in new-data [(:state sample) (:action sample)]
-                   #(sarsa-n-update % (:reward sample) (:alpha new-data)))) data R-n)))
+        {S' :state
+         A' :action} (last chain)
+        qt (drop-last (Gt chain γ))
+        γ-S'A' (Math/pow (count chain) γ)
+        Q-S'A' (Q data S' A')
+        qtn (conj qt (->Sample S' A' (* γ-S'A' Q-S'A')))
+        updated-data (from-chain data qtn
+                                 (fn [Q-SA sample]
+                                   (sarsa-n-update Q-SA (:reward sample) (:alpha data))))]
+    (tuples/tuple S' updated-data)))
 
 ;; FIXME: Add GLIE schedule
 ;; FIXME: Consider varying step sizes for better convergence properties
@@ -142,16 +163,12 @@
   (fn [start data]
     (let [gen (lazy-traj policy action-f reward-f transition-f)]
       (loop [S start
-             A (policy S action-f)
-             new-data data]
+             cur-data data]
         (let [trajectory (take N (gen S))
-              updated-data (sarsa-n-eval new-data trajectory (->Pair S A))
-              S' (last trajectory)
-              A' (policy S' action-f)]
+              [S' new-data] (sarsa-n-eval cur-data trajectory)]
           (if (is-end? S')
-            updated-data
-            (recur S' A' updated-data)))))))
-
+            new-data
+            (recur S' new-data)))))))
 
 ;; SARSA(λ) -> backward view
 
@@ -159,7 +176,7 @@
   (let [α (:alpha data)]
     (map-assoc
       (fn [A R]
-        (let [E (C data (->Pair S A))]
+        (let [E (C data S A)]
           (+ R (* α δ E)))) As)))
 
 (defn E-sarsa-λ [data S]
@@ -169,7 +186,7 @@
     (map-values
       #(* α λ %) As)))
 
-(defn update-sarsa-λ [data δ]
+(defn sarsa-λ-update [data δ]
   (reduce
     (fn [new-data [S As]]
       (let [Q-SA (Q-sarsa-λ new-data S As δ)
@@ -177,6 +194,22 @@
             update1 (assoc-in new-data [:q-values S] Q-SA)
             update2 (assoc-in update1 [:counts S] E-SA)]
         update2)) data (:q-values data)))
+
+
+(defn sarsa-λ-eval [policy
+                    action-f
+                    reward-f
+                    transition-f]
+  (fn [data S A]
+    (let [γ (:gamma data)
+          R (reward-f S A)
+          S' (transition-f S A)
+          A' (policy S' action-f)
+          Q-S'A' (Q data S' A')
+          Q-SA (Q data S A)
+          δ (+ R (- (* γ Q-S'A') Q-SA))
+          updated-data (update-in data [:counts S A] inc)]
+      (tuples/tuple S' A' (sarsa-λ-update updated-data δ)))))
 
 ;; FIXME: Add GLIE schedule
 ;; FIXME: Consider varying step sizes for better convergence properties
@@ -186,17 +219,11 @@
                transition-f
                is-end?]
   (fn [start data]
-    (loop [S start
-           A (policy S action-f)
-           new-data data]
-      (let [γ (:gamma new-data)
-            R (reward-f S A)
-            S' (transition-f S A)
-            A' (policy S' action-f)
-            Q-S'A' (Q new-data (->Pair S' A'))
-            Q-SA (Q new-data (-> Pair S A))
-            δ (+ R (- (* γ Q-S'A') Q-SA))
-            updated-data (update-in new-data [:counts S A] inc)]
-        (if (is-end? S')
-          updated-data
-          (recur S' A' (update-sarsa-λ updated-data δ)))))))
+    (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
+      (loop [S start
+             A (policy S action-f)
+             new-data data]
+        (let [[S' A' updated-data] (λ-eval new-data S A)]
+          (if (is-end? S')
+            updated-data
+            (recur S' A' updated-data)))))))

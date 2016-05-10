@@ -24,11 +24,9 @@
       else)))
 
 (defn consume [f coll]
-  (loop [whole []
-         rem coll]
-    (if (empty? rem)
-      whole
-      (recur (conj whole (f (first rem) rem)) (rest rem)))))
+  (for [elm coll]
+    (let [rem (drop-while #(not (= % elm)) coll)]
+      (f elm rem))))
 
 (defn map-assoc [f m]
   (reduce
