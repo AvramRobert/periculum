@@ -11,15 +11,23 @@
   (let [mid-index (Math/floor ^Float (/ (count coll) 2))]
     (nth coll mid-index)))
 
-(defn min-by [p coll]
-  ((->> coll (map p) (apply min))))
+(defn min-by [f coll]
+  (let [minimum (->> coll (map f) (apply min))
+        value (find-some #(= (f %) minimum) coll)]
+    (if (map? coll)
+      (apply hash-map value)
+      value)))
 
-(defn max-by [p coll]
-  (->> coll (map p) (apply max)))
+(defn max-by [f coll]
+  (let [maximum (->> coll (map f) (apply max))
+        value (find-some #(= (f %) maximum) coll)]
+    (if (map? coll)
+      (apply hash-map value)
+      value)))
 
 (defn or-else [f else]
   (fn [x]
-    (if-let [arg x]
+    (if-let [_ x]
       (f x)
       else)))
 
@@ -32,3 +40,10 @@
   (reduce
     (fn [nmap [k v]]
       (assoc nmap k (f k v))) {} m))
+
+(defn pick-rnd [coll]
+  (let [th (rand-int (count coll))]
+    (if (vector? coll)
+      (nth coll th)
+      (nth (vec coll) th))))
+

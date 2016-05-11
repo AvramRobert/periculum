@@ -60,7 +60,7 @@
     (or (solid? beneath lookup) (out? cur-pos))))
 
 (defn interval [actions]
-  (let [maximum (max-by #(:velocity %) actions)]
+  (let [maximum (->> actions (max-by :velocity) (:velocity))]
     (if (zero? maximum)
       1
       maximum)))
