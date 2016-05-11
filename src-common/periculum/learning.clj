@@ -1,6 +1,6 @@
 (ns periculum.learning
   (:use [periculum.world])
-  (:use [periculum.coll.more])
+  (:use [periculum.more])
   (:require [clj-tuple :as tuples])
   (:require [clojure.core.match :refer [match]])
   (:require [play-clj.math :as gmath])

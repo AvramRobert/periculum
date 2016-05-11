@@ -3,9 +3,6 @@
   (:require [clojure.core.match :refer [match]]))
 
 (defrecord state [row index])
-(defrecord trans [reward nxt])
-(defrecord state-action [state action])
-(defrecord state-action-reward [state action reward])
 
 (def actions [:left :right])
 

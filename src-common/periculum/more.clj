@@ -1,4 +1,4 @@
-(ns periculum.coll.more
+(ns periculum.more
   (:require [clj-tuple :as tuples]))
 
 (def empty-vec

@@ -1,6 +1,6 @@
 (ns periculum.world
   (use clojure.set)
-  (use [periculum.coll.more :only [empty-vec]]))
+  (use [periculum.more :only [empty-vec]]))
 
 (def shapes '(:rectangle :circle))
 

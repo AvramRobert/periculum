@@ -1,7 +1,7 @@
 (ns periculum.learning-spec
   (:use [periculum.world])
   (:use [periculum.learning])
-  (:use [periculum.coll.more])
+  (:use [periculum.more])
   (:use [clojure.test])
   (:require
     [clojure.test.check.generators :as gen]

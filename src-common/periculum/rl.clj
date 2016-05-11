@@ -1,7 +1,7 @@
 (ns periculum.rl
   (:require [clojure.core.async :as async]
             [clj-tuple :as tuples])
-  (:use [periculum.coll.more])
+  (:use [periculum.more])
   (:use [handy.map-values]))
 
 (def empty-data {:q-values {}

@@ -1,7 +1,7 @@
 (ns periculum.rl-spec
   (:use [periculum.rl])
   (:use [clojure.test])
-  (:use [periculum.coll.more])
+  (:use [periculum.more])
   (:require [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.clojure-test :refer [defspec]]))
