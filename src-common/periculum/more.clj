@@ -47,3 +47,10 @@
       (nth coll th)
       (nth (vec coll) th))))
 
+(defn take-until [pred coll]
+  (lazy-seq
+    (when-let [h (first coll)]
+      (if (pred h)
+        (cons h (take-until pred (rest coll)))
+        (cons h nil)))))
+
