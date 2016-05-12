@@ -6,9 +6,9 @@
 
 (def actions [:left :right])
 
-(defn transition [is-end?]
+(defn transition [terminal?]
   (fn [S A]
-    (if (is-end? S)
+    (if (terminal? S)
       S
       (match [A]
              [:left] (->state (inc (:row S)) (:index S))
@@ -28,9 +28,9 @@
 (def world
   [[3] [2 4] [1 9 3] [9 9 2 4] [4 6 6 7 8] [5 7 3 5 1 4]])
 
-(defn path-from-qs [data is-end? transition-f optimal]
+(defn path-from-qs [data terminal? transition-f optimal]
   (loop [path [] S (->state 0 0)]
-    (if (is-end? S)
+    (if (terminal? S)
       (conj path S)
       (let [As (get (:q-values data) S)
             A (optimal As)]
@@ -75,14 +75,14 @@
 ;; SARSA λ also works and depending on alpha, lambda and exploration, it can be more effective than MC
 (defn run-sarsa-λ [eps]
   (let [data (conf 0.9 0.1 0.9)
-        is-end? #(>= (:row %) (dec (count world)))
-        transition-f (transition is-end?)
+        terminal? #(>= (:row %) (dec (count world)))
+        transition-f (transition terminal?)
         reward-f (rewards world transition-f)
         policy (ε-greedy 0.4 optimum-min)
         action-f (fn [_] actions)
-        algorithm (sarsa-λ policy action-f reward-f transition-f is-end?)
+        algorithm (sarsa-λ policy action-f reward-f transition-f terminal?)
         env (control algorithm data identity)
         res (env (->state 0 0) eps)
-        path (path-from-qs res is-end? transition-f optimum-min)
+        path (path-from-qs res terminal? transition-f optimum-min)
         reward-path (as-reward path)]
     reward-path))

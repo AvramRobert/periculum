@@ -136,14 +136,14 @@
     (is (= {:left 9 :right 18} res4))))
 
 (deftest E-sarsa-λ-test
-  (let [data1 {:alpha 1
-               :lambda 1
+  (let [data1 {:lambda 1
+               :gamma 1
                :counts {(->Pos 0 0) {:left 1 :right 2}
                         (->Pos 0 1) {:right 1}
                         (->Pos 0 2) {:left 1 :right 2}}}
         res1 (E-sarsa-λ data1 (->Pos 0 0))
         res2 (E-sarsa-λ data1 (->Pos 0 1))
-        data2 (assoc data1 :alpha 7 :lambda 3)
+        data2 (assoc data1 :gamma 7 :lambda 3)
         res3 (E-sarsa-λ data2 (->Pos 0 2))]
     (is (= {:left 1 :right 2} res1))
     (is (= {:right 1} res2))

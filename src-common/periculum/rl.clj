@@ -225,14 +225,14 @@
                action-f
                reward-f
                transition-f
-               is-end?]
+               terminal?]
   (fn [start data eps-count]
     (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
       (loop [S start
              A (policy S (action-f S) data eps-count)
              cur-data data]
         (let [[S' A' new-data] (λ-eval S A cur-data eps-count)]
-          (if (is-end? S')
+          (if (terminal? S')
             (reset-eligibilities new-data)
             (recur S' A' new-data)))))))
 

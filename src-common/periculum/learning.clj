@@ -201,7 +201,7 @@
              [:jump] (stateify ((jump lookup) position previous) previous)
              :else (stateify ((move lookup) position action) action)))))
 
-(defn reward-com [world actions rewards is-end?]
+(defn reward-com [world actions rewards terminal?]
   (let [η (eta world actions)
         Ω (omega world actions)]
     (fn [state action]
@@ -209,33 +209,33 @@
             hits (->> path (map η) (flatten) (filter #(:solid? %)))
             holes (filter #(hole? %) path)
             end ((or-else (fn [_]
-                            (:end rewards)) 0) (find-some #(is-end? %) path))]
+                            (:end rewards)) 0) (find-some #(terminal? %) path))]
         (+ (* time (:tic rewards))
            (* (count hits) (:solid rewards))
            (* (count holes) (:solid rewards))
            end)))))
 
 ; FIXME: Should the transition function teleport the agent back to his starting position if he falls in a hole?
-(defn transition-com [world actions is-end?]
+(defn transition-com [world actions terminal?]
   (let [Ω (omega world actions)]
     (fn [state action]
       (let [[_ path] (Ω state action)]
-        (if-let [end (find-some is-end? path)]
+        (if-let [end (find-some terminal? path)]
           end
           (last path))))))
 
 (defn reward
-  ([world is-end?]
-    (reward-com world all-actions Rewards is-end?))
-  ([world actions is-end?]
-    (reward-com world actions Rewards is-end?))
-  ([world actions rewards is-end?]
-    (reward-com world actions rewards is-end?)))
+  ([world terminal?]
+    (reward-com world all-actions Rewards terminal?))
+  ([world actions terminal?]
+    (reward-com world actions Rewards terminal?))
+  ([world actions rewards terminal?]
+    (reward-com world actions rewards terminal?)))
 
 (defn transition
-  ([world is-end?]
-    (transition-com world all-actions is-end?))
-  ([world actions is-end?]
-    (transition-com world actions is-end?)))
+  ([world terminal?]
+    (transition-com world all-actions terminal?))
+  ([world actions terminal?]
+    (transition-com world actions terminal?)))
 
 (def actions (-> all-actions (drop-last) (keys)))
