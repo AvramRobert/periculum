@@ -1,6 +1,7 @@
 (ns periculum.examples.rl-triangle-path
   (:use [periculum.rl])
-  (:require [clojure.core.match :refer [match]]))
+  (:require [clojure.core.match :refer [match]]
+            [clojure.core.async :as async]))
 
 (defrecord state [row index])
 
@@ -21,9 +22,6 @@
            index :index
            } S']
       (-> world (nth row) (nth index)))))
-
-(defn greedy-by-min [As]
-  (->> As (opt-by-min) (keys) (first)))
 
 (def world
   [[3] [2 4] [1 9 3] [9 9 2 4] [4 6 6 7 8] [5 7 3 5 1 4]])
@@ -55,6 +53,20 @@
         reward-path (as-reward path)]
     reward-path))
 
+;; runs MC concurrently and pushes intermediate results to the given channel
+(defn run-mc-con [eps]
+  (let [channel (async/chan)
+        _ (observer channel)
+        data (conf 1.0 0.0 0.0)
+        terminal? #(>= (:row %) (dec (count world)))
+        transition-f (transition terminal?)
+        reward-f (rewards world transition-f)
+        policy (ε-greedy 0.6 greedy-by-min)
+        action-f (fn [_] actions)
+        algorithm (monte-carlo<- channel policy action-f reward-f transition-f terminal?)
+        env (control<- algorithm data channel)
+        _ (env (->state 0 0) eps)]))
+
 ;; SARSA won't work with this MDP, because the reward is dependent on continuation
 ;; SARSA must be greedy in the limit in order for its convergence to work
 ;; The problem is, SARSA is also 100% convergent if all states are visited infinitely many times. This I do not do.
@@ -65,7 +77,7 @@
         reward-f (rewards world transition-f)
         policy (GLIE-eps-greedy 0.6 greedy-by-min)
         action-f (fn [_] actions)
-        algorithm (sarsa policy action-f transition-f reward-f terminal?)
+        algorithm (sarsa policy action-f reward-f transition-f terminal?)
         env (control algorithm data identity)
         res (env (->state 0 0) eps)
         path (path-from-qs res terminal? transition-f greedy-by-min)
@@ -96,7 +108,7 @@
         reward-f (rewards world transition-f)
         policy (ε-greedy 0.6 greedy-by-min)
         action-f (fn [_] actions)
-        algorithm (q-learning policy greedy-by-min action-f transition-f reward-f terminal?)
+        algorithm (q-learning greedy-by-min policy action-f reward-f transition-f terminal?)
         env (control algorithm data identity)
         res (env (->state 0 0) eps)
         path (path-from-qs res terminal? transition-f greedy-by-min)
