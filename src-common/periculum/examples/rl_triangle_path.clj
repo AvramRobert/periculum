@@ -22,7 +22,7 @@
            } S']
       (-> world (nth row) (nth index)))))
 
-(defn optimum-min [As]
+(defn greedy-by-min [As]
   (->> As (opt-by-min) (keys) (first)))
 
 (def world
@@ -46,28 +46,29 @@
         terminal? #(>= (:row %) (dec (count world)))
         transition-f (transition terminal?)
         reward-f (rewards world transition-f)
-        policy (ε-greedy 0.6 optimum-min)
+        policy (ε-greedy 0.6 greedy-by-min)
         action-f (fn [_] actions)
         algorithm (monte-carlo policy action-f reward-f transition-f terminal?)
         env (control algorithm data identity)
         res (env (->state 0 0) eps)
-        path (path-from-qs res terminal? transition-f optimum-min)
+        path (path-from-qs res terminal? transition-f greedy-by-min)
         reward-path (as-reward path)]
     reward-path))
 
-;; SARSA won't work with this MDP properly, because the reward is dependent on continuation
-;; The environment should've been modeled differently in order for this to work
+;; SARSA won't work with this MDP, because the reward is dependent on continuation
+;; SARSA must be greedy in the limit in order for its convergence to work
+;; The problem is, SARSA is also 100% convergent if all states are visited infinitely many times. This I do not do.
 (defn run-sarsa [eps]
   (let [data (conf 0.9 1.0 0.0)
         terminal? #(>= (:row %) (dec (count world)))
         transition-f (transition terminal?)
         reward-f (rewards world transition-f)
-        policy (eps-greedy 0.5 optimum-min)
+        policy (GLIE-eps-greedy 0.6 greedy-by-min)
         action-f (fn [_] actions)
         algorithm (sarsa policy action-f transition-f reward-f terminal?)
         env (control algorithm data identity)
         res (env (->state 0 0) eps)
-        path (path-from-qs res terminal? transition-f optimum-min)
+        path (path-from-qs res terminal? transition-f greedy-by-min)
         reward-path (as-reward path)
         ]
     reward-path))
@@ -78,11 +79,26 @@
         terminal? #(>= (:row %) (dec (count world)))
         transition-f (transition terminal?)
         reward-f (rewards world transition-f)
-        policy (ε-greedy 0.4 optimum-min)
+        policy (ε-greedy 0.4 greedy-by-min)
         action-f (fn [_] actions)
         algorithm (sarsa-λ policy action-f reward-f transition-f terminal?)
         env (control algorithm data identity)
         res (env (->state 0 0) eps)
-        path (path-from-qs res terminal? transition-f optimum-min)
+        path (path-from-qs res terminal? transition-f greedy-by-min)
+        reward-path (as-reward path)]
+    reward-path))
+
+;; works very well with this MDP
+(defn run-q-learning [eps]
+  (let [data (conf 1.0 0.4 0.0)
+        terminal? #(>= (:row %) (dec (count world)))
+        transition-f (transition terminal?)
+        reward-f (rewards world transition-f)
+        policy (ε-greedy 0.6 greedy-by-min)
+        action-f (fn [_] actions)
+        algorithm (q-learning policy greedy-by-min action-f transition-f reward-f terminal?)
+        env (control algorithm data identity)
+        res (env (->state 0 0) eps)
+        path (path-from-qs res terminal? transition-f greedy-by-min)
         reward-path (as-reward path)]
     reward-path))

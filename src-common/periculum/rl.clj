@@ -48,17 +48,17 @@
       (async/close! channel))
     ))
 
+;; ========= Utils =========
+
 (defn discount [chain γ]
   (map-indexed (fn [idx sample]
                  (* (:reward sample) (Math/pow γ idx))) chain))
 
-;; tested
 (defn Gt [chain γ]
   (consume (fn [sample rem]
              (let [discounted (reduce + (discount rem γ))]
                (assoc sample :reward discounted))) chain))
 
-;; tested
 (defn lazy-traj [policy
                  action-f
                  reward-f
@@ -74,7 +74,6 @@
                        R' (reward-f S' A')]
                    (->Sample S' A' R'))) (->Sample S A R)))))
 
-;; tested
 (defn Q
   ([data SA]
    ((or-else identity 0)
@@ -83,7 +82,6 @@
    ((or-else identity 0)
      (get-in data [:q-values S A]))))
 
-;; tested
 (defn C
   ([data SA]
    ((or-else identity 0)
@@ -92,14 +90,12 @@
    ((or-else identity 0)
      (get-in data [:counts S A]))))
 
-;; tested
 (defn from-chain [data chain f]
   (reduce
     (fn [new-data sample]
       (update-in new-data [:q-values (:state sample) (:action sample)]
                  (fn [old]
                    ((or-else #(f % sample) (:reward sample)) old)))) data chain))
-;; tested
 (defn every-visit-inc
   ([data chain]
    (reduce (fn [n-data sample]
@@ -108,9 +104,68 @@
   ([data S A]
    (update-in data [:counts S A] #((or-else inc 1) %))))
 
-;; Monte Carlo
+(defn opt-by-min [As]
+  (min-by val As))
 
-;; tested
+(defn opt-by-max [As]
+  (max-by val As))
+
+
+;; ========= Policies =========
+
+(defn- ε-policy [ε find-opt f]
+  (fn [S As data eps-count]
+    (if (contains? (:q-values data) S)
+      (let [Qs (:q-values data)
+            nε (f ε eps-count)
+            P-greedy (+ (/ nε (count As)) (- 1 ε))
+            A-greedy (find-opt (get Qs S))
+            rest (filter #(not (= A-greedy %)) As)]
+        (if (> (rand) P-greedy)
+          (pick-rnd rest)
+          A-greedy))
+      (pick-rnd As))))
+
+
+(defn ε-greedy
+  ([ε find-opt]
+   (ε-policy ε find-opt (fn [ε-in _] ε-in)))
+  ([ε]
+   (ε-policy ε opt-by-max (fn [ε-in _] ε-in))))
+
+(defn GLIE-ε-greedy [ε find-opt]
+  (ε-policy ε find-opt
+            (fn [ε-in k]
+              (let [count (if (zero? k) 1 k)]
+                (* ε-in (/ 1 count))))))
+
+(defn GLIE-ε-episode [find-opt]
+  (ε-policy 0.0 find-opt (fn [_ k]
+                           (/ 1 k))))
+
+(defn ε-balanced [S As data eps-count]
+  (pick-rnd As))
+
+(defn eps-balanced [S As data eps-count]
+  (ε-balanced S As data eps-count))
+
+(defn eps-greedy [epsilon find-opt]
+  (ε-greedy epsilon find-opt))
+
+(defn GLIE-eps-greedy [epsilon find-opt]
+  (GLIE-ε-greedy epsilon find-opt))
+
+(defn GLIE-eps-epsiode [find-opt]
+  (GLIE-ε-episode find-opt))
+
+(defn greedy [find-opt]
+  (fn [S As data _]
+    (if-let [known-As (get (:q-values data) S)]
+      (find-opt known-As)
+      (pick-rnd As))))
+
+;; ============ Monte Carlo ============
+
 (defn mc-update [Q-SA Gt-SA N-SA]
   (+ Q-SA (* (/ 1 N-SA) (- Gt-SA Q-SA))))
 
@@ -135,7 +190,7 @@
           trajectory (take-while #(not (terminal? (:state %))) (gen start data eps-count))]
       (mc-eval data trajectory))))
 
-;; SARSA(1)
+;; ========= SARSA(1) =========
 
 (defn sarsa-update [S A R S' A' data]
   (let [alpha (:alpha data)
@@ -169,9 +224,8 @@
             new-data
             (recur S' A' new-data)))))))
 
-;; SARSA(λ) -> backward view
+;;  ========= SARSA(λ) =========
 
-;; tested
 (defn Q-sarsa-λ [data S As δ]
   (let [α (:alpha data)]
     (map-assoc
@@ -179,7 +233,6 @@
         (let [E (C data S A)]
           (+ R (* α δ E)))) As)))
 
-;; tested
 (defn E-sarsa-λ [data S]
   (let [γ (:gamma data)
         λ (:lambda data)
@@ -237,59 +290,32 @@
             (recur S' A' new-data)))))))
 
 
-;; FIXME: Q-Learning
+;; ========= Q-Learning =========
 
+(defn q-learning-eval [policy
+                       greedy-policy
+                       action-f
+                       transition-f
+                       reward-f]
+  (fn [S data eps-count]
+    (let [A (policy S (action-f S) data eps-count)
+          R (reward-f S A)
+          S' (transition-f S A)
+          A' (greedy-policy S' (action-f S') data eps-count)]
+      (tuples/tuple S' (sarsa-update S A R S' A' data)))))
 
-;; policies
-(defn- ε-policy [ε find-opt f]
-  (fn [S As data eps-count]
-    (if (contains? (:q-values data) S)
-      (let [Qs (:q-values data)
-            nε (f ε eps-count)
-            P-greedy (+ (/ nε (count As)) (- 1 ε))
-            A-greedy (find-opt (get Qs S))
-            rest (filter #(not (= A-greedy %)) As)]
-        (if (> (rand) P-greedy)
-          (pick-rnd rest)
-          A-greedy))
-      (pick-rnd As))))
-
-
-(defn opt-by-min [As]
-  (min-by val As))
-
-(defn opt-by-max [As]
-  (max-by val As))
-
-(defn ε-greedy
-  ([ε find-opt]
-   (ε-policy ε find-opt (fn [ε-in _] ε-in)))
-  ([ε]
-   (ε-policy ε opt-by-max (fn [ε-in _] ε-in))))
-
-(defn GLIE-ε-greedy [ε find-opt]
-  (ε-policy ε find-opt
-            (fn [ε-in k]
-              (let [count (if (zero? k) 1 k)]
-                (* ε-in (/ 1 count))))))
-
-(defn GLIE-ε-episode [find-opt]
-  (ε-policy 0.0 find-opt (fn [_ k]
-                           (/ 1 k))))
-
-(defn ε-balanced [S As data eps-count]
-  (pick-rnd As))
-
-
-(defn eps-balanced [S As data eps-count]
-  (ε-balanced S As data eps-count))
-
-(defn eps-greedy [epsilon find-opt]
-  (ε-greedy epsilon find-opt))
-
-(defn GLIE-eps-greedy [epsilon find-opt]
-  (GLIE-ε-greedy epsilon find-opt))
-
-(defn GLIE-eps-epsiode [find-opt]
-  (GLIE-ε-episode find-opt))
-
+(defn q-learning [policy
+                  find-greedily
+                  action-f
+                  transition-f
+                  reward-f
+                  terminal?]
+  (fn [start data eps-count]
+    (let [greedy-policy (greedy find-greedily)
+          q-eval (q-learning-eval policy greedy-policy action-f transition-f reward-f)]
+      (loop [S start
+             cur-data data]
+        (let [[S' new-data] (q-eval S cur-data eps-count)]
+          (if (terminal? S')
+            new-data
+            (recur S' new-data)))))))
