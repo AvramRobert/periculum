@@ -2,7 +2,7 @@
   (use clojure.set)
   (use [periculum.more :only [empty-vec]]))
 
-(def shapes '(:rectangle :circle))
+(def types '(:floor :wall))
 
 (defrecord Pos [x y])
 
@@ -11,7 +11,7 @@
                    start-pos])
 
 (defrecord Entity [label
-                   shape
+                   type
                    position
                    components
                    solid?])
@@ -28,24 +28,30 @@
                        (map (fn [item]
                               (update item :y #(+ % index))) items)) all)))))
 
-(defn solidify [position]
-  (->Entity "Solid" :rectangle position empty-vec true))
+(defn solidify
+  ([position]
+   (->Entity "Solid" :none position empty-vec true))
+  ([position ent-type]
+   (->Entity "Solid" ent-type position empty-vec true)))
 
-(defn solidify-many [lattice]
-  (map solidify lattice))
+(defn solidify-many
+  ([lattice]
+   (map solidify lattice))
+  ([lattice ent-type]
+   (map #(solidify % ent-type) lattice)))
 
 (defn platform [length holes]
   (fn [start-pos]
     (let [lattice ((lattice length 1) start-pos)
           holeless (difference (set lattice) (set holes))]
-      (solidify-many holeless))))
+      (solidify-many holeless :floor))))
 
 (defn make-solid [length height]
   (fn
     ([start-pos]
-     (solidify-many ((lattice length height) start-pos)))
+     (solidify-many ((lattice length height) start-pos) :wall))
     ([x y]
-     (solidify-many ((lattice length height) (->Pos x y))))))
+     (solidify-many ((lattice length height) (->Pos x y)) :wall))))
 
 (defn make-platform [length holes]
   (fn
@@ -69,7 +75,6 @@
                    :holes     [<pos>]
                    :walls     [<length, height, pos>]
                    :platforms [<length, pos>]
-                   ;:actions   {<actions>}
                    ;:other     [<pos> <pos> <pos>]           ; other things that can move
                    }))
 

@@ -34,6 +34,11 @@
         (println "Done")
         value))))
 
+(defn delayed-observer [channel]
+  (fn [f]
+    (when-let [value (async/poll! channel)]
+      (f value))))
+
 (defn control [algorithm config]
   (fn [start eps]
     (async/thread
