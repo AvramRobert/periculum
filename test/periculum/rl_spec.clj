@@ -83,18 +83,6 @@
            (f value vs))) (group-by (fn [v]
                                       [(:state v) (:action v)]) init)))
 
-(defspec chain-test
-         100
-         (prop/for-all [v (gen/such-that not-empty (gen/vector gen-sample))]
-                       (let [data {:q-values {}}
-                             ndata (from-chain data v (fn [old cur]
-                                                        (+ old (:reward cur))))
-                             summed-eq (grouped-map (:q-values ndata) v
-                                                    (fn [cmptd cur]
-                                                      (= cmptd (reduce #(+ %1 (:reward %2)) 0 cur))))]
-                         (is (every? #(contains? (:q-values ndata) (:state %)) v))
-                         (is (every? identity summed-eq)))))
-
 
 (defspec every-visit-inc-tst
          100
@@ -112,10 +100,13 @@
 (defspec mc-update-test
          100
          (prop/for-all [v (gen/such-that not-empty (gen/vector gen/int))
-                        +elm gen/int]
-                       (let [init-mean (mean v)
-                             inc-mean (mc-update init-mean +elm (+ 1 (count v)))
-                             exp-mean (mean (conj v +elm))]
+                        rew gen/int]
+                       (let [data {:q-values {(->Pos 0 0) {:left (mean v)}}
+                                   :counts {(->Pos 0 0) {:left (count v)}}}
+                             counted (every-visit-inc data (->Pos 0 0) :left)
+                             new-data (monte-carlo-update counted (->Sample (->Pos 0 0) :left rew))
+                             inc-mean (get-in new-data [:q-values (->Pos 0 0) :left])
+                             exp-mean (mean (conj v rew))]
                          (is (= inc-mean exp-mean)))))
 
 

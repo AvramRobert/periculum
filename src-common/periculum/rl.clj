@@ -94,12 +94,6 @@
    ((or-else identity 0)
      (get-in data [:counts S A]))))
 
-(defn from-chain [data chain f]
-  (reduce
-    (fn [new-data sample]
-      (update-in new-data [:q-values (:state sample) (:action sample)]
-                 (fn [old]
-                   ((or-else #(f % sample) (:reward sample)) old)))) data chain))
 (defn every-visit-inc
   ([data chain]
    (reduce (fn [n-data sample]
@@ -217,32 +211,35 @@
 
 ;; ============ Monte Carlo ============
 
-;; FIXME: rewrite Monte Carlo analogous to the other algorithms
-;; Make the evaluation create the chain
+(defn monte-carlo-update [data sample]
+  (let [{S     :state
+         A     :action
+         Gt-SA :reward} sample
+        Q-SA (Q data S A)
+        N-SA (C data S A)]
+    (assoc-in data [:q-values S A] (+ Q-SA (* (/ 1 N-SA) (- Gt-SA Q-SA))))))
 
-(defn mc-update [Q-SA Gt-SA N-SA]
-  (+ Q-SA (* (/ 1 N-SA) (- Gt-SA Q-SA))))
-
-(defn mc-eval [data chain]
-  (let [R-n (Gt chain (:gamma data))
-        updated-data (every-visit-inc data chain)]
-    (from-chain updated-data R-n
-                (fn [Q-SA sample]
-                  (let [{S     :state
-                         A     :action
-                         Gt-SA :reward} sample
-                        N-SA (C updated-data S A)]
-                    (mc-update Q-SA Gt-SA N-SA))))))
+(defn monte-carlo-eval [policy
+                        action-f
+                        reward-f
+                        transition-f
+                        terminal?]
+  (fn [start data eps-count]
+    (let [chain-from (lazy-traj policy action-f reward-f transition-f)
+          markov-chain (take-while #(not (terminal? (:state %))) (chain-from start data eps-count))
+          Gt-R (Gt markov-chain (:gamma data))
+          data-counted (every-visit-inc data markov-chain)]
+      (tuples/tuple start (reduce monte-carlo-update data-counted Gt-R)))))
 
 (defn monte-carlo [policy
                    action-f
                    reward-f
                    transition-f
                    terminal?]
-  (fn [start data eps-count]
-    (let [gen (lazy-traj policy action-f reward-f transition-f)
-          trajectory (take-while #(not (terminal? (:state %))) (gen start data eps-count))]
-      (mc-eval data trajectory))))
+  (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
+    (bootstrap-eval mc-eval
+                    (fn [_] true)
+                    identity)))
 
 (defn monte-carlo<- [channel
                      policy
@@ -250,12 +247,11 @@
                      reward-f
                      transition-f
                      terminal?]
-  (fn [start data eps-count]
-    (let [gen (lazy-traj policy action-f reward-f transition-f)
-          trajectory (take-while #(not (terminal? (:state %))) (gen start data eps-count))
-          new-data (mc-eval data trajectory)
-          _ (async/go (async/>! channel new-data))]
-      new-data)))
+  (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
+    (bootstrap-eval channel
+                    mc-eval
+                    (fn [_] true)
+                    identity)))
 
 ;; ========= SARSA(1) =========
 
