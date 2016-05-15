@@ -11,46 +11,46 @@
                  :lambda   0.0
                  })
 
+(defrecord Pair [state action])
+(defrecord Sample [state action reward])
+
 (defn conf [gamma alpha lambda]
   (assoc empty-data :gamma gamma
                     :alpha alpha
                     :lambda lambda))
 
-(defrecord Pair [state action])
-(defrecord Sample [state action reward])
-
-(defn observer [channel]
-  (async/go-loop [res {}]
-    (println res)
-    (Thread/sleep 10)
-    (if-let [data (async/<! channel)]
-      (recur data)
-      (do
-        (println "Done")
-        res))))
-
-(defn control [algorithm config f]
-  (fn [start eps]
-    (reduce
-      (fn [data episode]
-        (let [new-data (algorithm start data episode)
-              _ (f new-data)]
-          new-data)) config (range 1 eps))))
-
-(defn- close-all [& channels]
+(defn- close-all! [& channels]
   (if (empty? channels)
     (println "Successfully closed all channels")
     (let [chan (first channels)
           _ (async/close! chan)]
       (recur (rest channels)))))
 
+(defn observer [channel init f]
+  (async/go-loop [value init]
+    (if-let [new-value (async/<! channel)]
+      (recur (f new-value))
+      (do
+        (println "Done")
+        value))))
+
+(defn control [algorithm config]
+  (fn [start eps]
+    (async/thread
+      (println "Executing")
+      (reduce
+        (fn [data episode]
+          (algorithm start data episode)) config (range 1 eps)))))
+
 (defn control<- [algorithm config & channels]
   (fn [start eps]
     (async/thread
       (do
+        (println "Executing")
         (reduce (fn [data episode]
                   (algorithm start data episode)) config (range 1 eps))
-        (apply close-all channels)))))
+        (apply close-all! channels)))))
+
 
 ;; ========= Utils =========
 
@@ -262,10 +262,10 @@
         Q-S'A' (Q data S' A')]
     (assoc-in data [:q-values S A] (+ Q-SA (* α (+ R (- (* γ Q-S'A') Q-SA)))))))
 
-(defn sarsa-eval [policy
-                  action-f
-                  reward-f
-                  transition-f]
+(defn sarsa-1-eval [policy
+                    action-f
+                    reward-f
+                    transition-f]
   (fn [SA data eps-count]
     (let [{S :state
            A :action} SA
@@ -274,26 +274,26 @@
           A' (policy S' (action-f S') data eps-count)]
       (tuples/tuple (->Pair S' A') (sarsa-update S A R S' A' data)))))
 
-(defn sarsa [policy
-             action-f
-             reward-f
-             transition-f
-             terminal?]
-  (let [sarsa-evl (sarsa-eval policy action-f reward-f transition-f)]
-    (fn [S data eps-count]
-      (let [A (policy S (action-f S) data eps-count)
-            evaluator (bootstrap-eval sarsa-evl
-                                      #(terminal? (:state %))
-                                      identity)]
-        (evaluator (->Pair S A) data eps-count)))))
-
-(defn sarsa<- [channel
-               policy
+(defn sarsa-1 [policy
                action-f
                reward-f
                transition-f
                terminal?]
-  (let [sarsa-evl (sarsa-eval policy action-f reward-f transition-f)]
+  (let [sarsa-eval (sarsa-1-eval policy action-f reward-f transition-f)]
+    (fn [S data eps-count]
+      (let [A (policy S (action-f S) data eps-count)
+            evaluator (bootstrap-eval sarsa-eval
+                                      #(terminal? (:state %))
+                                      identity)]
+        (evaluator (->Pair S A) data eps-count)))))
+
+(defn sarsa-1<- [channel
+                 policy
+                 action-f
+                 reward-f
+                 transition-f
+                 terminal?]
+  (let [sarsa-evl (sarsa-1-eval policy action-f reward-f transition-f)]
     (bootstrap-eval channel
                     sarsa-evl
                     #(terminal? (:state %))
