@@ -7,11 +7,6 @@
             [periculum.world :refer [make-world m-struct pos]]
             [clojure.core.match :refer [match]]))
 
-  (def config {:floor     (m-struct 11 0 (pos 0 0))
-               :holes     [(pos 4 0) (pos 5 0)]
-               :walls     [(m-struct 2 3 (pos 2 1))]
-               :platforms [(m-struct 3 (pos 4 5))]})
-
 (defn derive-pos
   [entity]
   (let [x (get-in entity [:position :x])
@@ -20,15 +15,15 @@
 
 (defn wall-shape [entity]
   (let [pos (derive-pos entity)]
-    (shape :filled
-           :set-color (color :red)
-           :rect (:x pos) (:y pos) block-size block-size)))
+    (assoc (shape :filled
+                  :set-color (color :red)
+                  :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
 (defn floor-shape [entity]
   (let [pos (derive-pos entity)]
-    (shape :filled
-           :set-color (color :green)
-           :rect (:x pos) (:y pos) block-size block-size)))
+    (assoc (shape :filled
+                  :set-color (color :green)
+                  :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
 (defn player-shape [x y]
   (let [pos (block-pos x y)]
@@ -36,22 +31,26 @@
                   :set-color (color :white)
                   :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
-(def check! (observe! policy-channel))
-
-(defn look-at [entities]
-  (if-let [new-nts (check! #(move-test entities %))]
-    new-nts
-    entities))
-
 (defn pause [amount entities]
   (Thread/sleep amount)
   entities)
+
+(defn enlighten [entities]
+  (let [ne (map
+             (fn [e]
+               (let [x (:x e)
+                     y (:y e)]
+                 (assoc (shape e
+                               :set-color (color! (shape! e :get-color) :sub 0.015 0.015 0.0 0.0)
+                               :rect 0 0 block-size block-size) :x x :y y)))
+             entities)]
+    ne))
 
 (defscreen main-screen
            :on-show
            (fn [screen entities]
              (update! screen :renderer (stage) :camera (orthographic))
-             (let [env (make-world config)
+             (let [env (make-world world-conf)
                    walls (->> env
                               (filter #(= (:type %) :wall))
                               (map wall-shape))
@@ -72,8 +71,8 @@
            (fn [screen entities]
              (clear!)
              (->> entities
-                  (look-at)
                   (pause 100)
+                  (enlighten)
                   (render! screen))))
 
 (defgame periculum-game

@@ -119,6 +119,8 @@
            cur pos
            visited (tuples/tuple)]
       (let [todo (deref-actions (conj actions :fall) lookup)
+            _ (println todo)
+            _ (println actions)
             interpolated (<+> cur todo)
             not-solid? #(not (solid? % lookup))]
         (if (every? not-solid? interpolated)
@@ -201,7 +203,7 @@
              [:jump] (stateify ((jump lookup) position previous) previous)
              :else (stateify ((move lookup) position action) action)))))
 
-(defn reward-com [world actions rewards terminal?]
+(defn- reward-com [world actions rewards terminal?]
   (let [η (eta world actions)
         Ω (omega world actions)]
     (fn [state action]
@@ -216,7 +218,7 @@
            end)))))
 
 ; FIXME: Should the transition function teleport the agent back to his starting position if he falls in a hole?
-(defn transition-com [world actions terminal?]
+(defn- transition-com [world actions terminal?]
   (let [Ω (omega world actions)]
     (fn [state action]
       (let [[_ path] (Ω state action)]
@@ -224,9 +226,11 @@
           end
           (last path))))))
 
+(def ^:privte default-actions all-actions)
+
 (defn reward
   ([world terminal?]
-    (reward-com world all-actions Rewards terminal?))
+    (reward world default-actions Rewards terminal?))
   ([world actions terminal?]
     (reward-com world actions Rewards terminal?))
   ([world actions rewards terminal?]
@@ -234,8 +238,13 @@
 
 (defn transition
   ([world terminal?]
-    (transition-com world all-actions terminal?))
+    (transition world default-actions terminal?))
   ([world actions terminal?]
     (transition-com world actions terminal?)))
+
+(defn terminal? [world]
+  (let [max (max-by #(-> % (:position) (:x)) world)]
+    (fn [state]
+      (= (-> state (:position) (:x)) (-> max (:position) (:x))))))
 
 (def actions (-> all-actions (drop-last) (keys)))

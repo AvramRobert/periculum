@@ -11,19 +11,19 @@
 (def test-h-max 4)
 (def test-t-apex 2)
 (def test-G (gravity test-h-max test-t-apex))
-(def test-rewards {:tic -1
-                   :solid    -5
-                   :end      20
-                  })
+(def test-rewards {:tic   -1
+                   :solid -5
+                   :end   20
+                   })
 
-(def test-actions {:stand     (->Action 0 1 [0 0])
-                  :walk-left  (->Action 1 1 [-1 0])
-                  :walk-right (->Action 1 1 [1 0])
-                  :run-left   (->Action 2 1 [-1 0])
-                  :run-right  (->Action 2 1 [1 0])
-                  :jump       (->Action (Math/round ^Float (jump-velocity test-G test-h-max)) test-t-apex [0 1])
-                  :fall       (->Action test-G 1 [0 -1])
-                  })
+(def test-actions {:stand      (->Action 0 1 [0 0])
+                   :walk-left  (->Action 1 1 [-1 0])
+                   :walk-right (->Action 1 1 [1 0])
+                   :run-left   (->Action 2 1 [-1 0])
+                   :run-right  (->Action 2 1 [1 0])
+                   :jump       (->Action (Math/round ^Float (jump-velocity test-G test-h-max)) test-t-apex [0 1])
+                   :fall       (->Action test-G 1 [0 -1])
+                   })
 
 (defn is-found? [coll]
   (let [item (rand-nth coll)]
@@ -204,7 +204,8 @@
         state2 (->State (pos 2 1) :stand)
         res-walk-right-fall (transitionf state2 :walk-right)
         state3 (->State (pos 10 4) :stand)
-        res-run-fall-win (transitionf state3 :run-right)]
+        res-run-fall-win (transitionf state3 :run-right)
+        state4 (->State (pos 1 1) :walk-right)]
     (is (= res-walk-right (->State (pos 2 1) :walk-right)))
     (is (= res-walk-right-fall (->State (pos 3 0) :walk-right)))
     (is (= res-run-fall-win (->State (pos 12 1) :run-right)))))

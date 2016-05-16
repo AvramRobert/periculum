@@ -58,6 +58,12 @@
 
 
 ;; ========= Utils =========
+(defn action-mean [As]
+  (let [sum (reduce (fn [p [_ v]] (+ p v)) 0 As)]
+    (/ sum (count As))))
+
+(defn v-π [data]
+  (update data :q-values #(map-values action-mean %)))
 
 (defn discount [chain γ]
   (map-indexed (fn [idx sample]
