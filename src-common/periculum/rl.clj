@@ -39,13 +39,13 @@
     (when-let [value (async/poll! channel)]
       (f value))))
 
-(defn control [algorithm config]
-  (fn [start eps]
-    (reduce
-      (fn [data episode]
-        (algorithm start data episode)) config (range 1 eps))))
+;(defn control [algorithm config]
+;  (fn [start eps]
+;    (reduce
+;      (fn [data episode]
+;        (algorithm start data episode)) config (range 1 eps))))
 
-(defn control2 [algorithm config]
+(defn control [algorithm config]
   (fn [start eps]
     (async/thread
       (println "Executing")

@@ -30,7 +30,7 @@
 
 (defn default [algorithm]
   (let [data (conf 1.0 0.4 0.7)
-        policy (eps-greedy 0.6 greedy-by-max)
+        policy (eps-greedy 0.6 greedy-by-max policy-channel)
         terminal-f (terminal? world)
         action-f actions
         transition-f (transition world terminal-f)
@@ -56,15 +56,15 @@
 (defn observe! [channel]
   (delayed-observer channel))
 
-(defn do-trans! [entity state]
-  (let [pos (:position state)]
-    (-> entity (assoc :x (:x pos)) (assoc :y (:y pos)))))
+(defn do-trans! [entity pair]
+  (let [pos (->> pair (:state) (:position))]
+    (-> entity (assoc :x (* (:x pos) block-size)) (assoc :y (* (:y pos) block-size)))))
 
-(defn move-agent [entities state]
+(defn move-agent [entities pair]
   (map
     (fn [e]
       (if-let [_ (:player? e)]
-        (do-trans! e state)
+        (do-trans! e pair)
         e)) entities))
 
 ;; FIXME: find a way to properly grade the colours based on q-values
