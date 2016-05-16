@@ -59,3 +59,8 @@
     (if (pred value)
       (recur (f value))
       (f value))))
+
+(defn last-or [coll else]
+  (if (empty? coll)
+    else
+    (last coll)))

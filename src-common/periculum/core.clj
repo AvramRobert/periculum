@@ -50,7 +50,7 @@
            :on-show
            (fn [screen entities]
              (update! screen :renderer (stage) :camera (orthographic))
-             (let [env (make-world world-conf)
+             (let [env (make-world world-config)
                    walls (->> env
                               (filter #(= (:type %) :wall))
                               (map wall-shape))
@@ -72,7 +72,7 @@
              (clear!)
              (->> entities
                   (pause 100)
-                  (enlighten)
+                  (show-choice)
                   (render! screen))))
 
 (defgame periculum-game

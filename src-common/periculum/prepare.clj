@@ -12,10 +12,40 @@
 (def policy-channel (async/chan))
 (def qs-channel (async/chan))
 
-(def world-conf {:floor     (m-struct 11 0 (pos 0 0))
-                 :holes     [(pos 4 0) (pos 5 0)]
-                 :walls     [(m-struct 2 3 (pos 2 1))]
-                 :platforms [(m-struct 3 (pos 4 5))]})
+(defn state [x y action]
+  (->State (->Pos x y) action))
+
+;(def world-config {:floor     (m-struct 11 0 (pos 0 0))
+;                 :holes     [(pos 4 0) (pos 5 0)]
+;                 :walls     [(m-struct 2 3 (pos 2 1))]
+;                 :platforms [(m-struct 3 (pos 4 5))]})
+
+(def world-config {:floor     (m-struct 15 0 (pos 0 0))
+                   :holes     [(pos 3 0) (pos 13 0) (pos 14 0) (pos 15 0)]
+                   :walls     [(m-struct 2 3 (pos 5 1)) (m-struct 2 3 (pos 10 1))]
+                   :platforms empty-vec
+                   })
+
+(def world (make-world world-config))
+
+(defn default [algorithm]
+  (let [data (conf 1.0 0.4 0.7)
+        policy (eps-greedy 0.6 greedy-by-max)
+        terminal-f (terminal? world)
+        action-f actions
+        transition-f (transition world terminal-f)
+        reward-f (reward world terminal-f)
+        exp-algorithm (algorithm policy action-f reward-f transition-f terminal-f)]
+    (control exp-algorithm data)))
+
+(def tst
+  (let [data (conf 1.0 0.4 0.7)
+        policy (eps-greedy 0.6 greedy-by-max)
+        terminal-f (terminal? world)
+        action-f actions
+        transition-f (transition world terminal-f)
+        reward-f (reward world terminal-f)]
+    (lazy-traj policy action-f reward-f transition-f)))
 
 (defn block-pos
   ([x y]

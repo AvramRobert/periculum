@@ -41,6 +41,12 @@
 
 (defn control [algorithm config]
   (fn [start eps]
+    (reduce
+      (fn [data episode]
+        (algorithm start data episode)) config (range 1 eps))))
+
+(defn control2 [algorithm config]
+  (fn [start eps]
     (async/thread
       (println "Executing")
       (reduce
@@ -81,7 +87,7 @@
   (fn [start data eps-count]
     (let [S start
           A (policy S (action-f S) data eps-count)
-          R (reward-f start A)]
+          R (reward-f S A)]
       (iterate (fn [sample]
                  (let [S' (transition-f (:state sample)
                                         (:action sample))
@@ -168,8 +174,8 @@
 (defn ε-greedy
   ([ε]
    (ε-greedy ε greedy-by-max))
-  ([ε find-opt]
-   (ε-policy ε find-opt (fn [ε-in _] ε-in)))
+  ([ε find-greedily]
+   (ε-policy ε find-greedily (fn [ε-in _] ε-in)))
   ([ε find-greedily channel]
    (let [policy (ε-greedy ε find-greedily)]
      (bootstrap-policy channel policy))))

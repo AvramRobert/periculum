@@ -26,38 +26,45 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
-(def Rewards {:tic -1
+(def Rewards {:tic   -1
               :solid -5
-              :end 20
+              :end   20
               })
 
-(def all-actions {:stand      (->Action 0 1 [0 0])
-                  :walk-left  (->Action 1 1 [-1 0])
-                  :walk-right (->Action 1 1 [1 0])
-                  :run-left   (->Action 2 1 [-1 0])
-                  :run-right  (->Action 2 1 [1 0])
-                  :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
-                  :fall       (->Action G 1 [0 -1])
-                  })
+(def ^:private all-actions {:stand      (->Action 0 1 [0 0])
+                            :walk-left  (->Action 1 1 [-1 0])
+                            :walk-right (->Action 1 1 [1 0])
+                            :run-left   (->Action 2 1 [-1 0])
+                            :run-right  (->Action 2 1 [1 0])
+                            :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
+                            :fall       (->Action G 1 [0 -1])
+                            })
 
 (defn update-pos [pos amount orient]
   (let [xed (assoc pos :x (+ (:x pos) (* amount (nth orient 0))))
         yed (assoc xed :y (+ (:y pos) (* amount (nth orient 1))))]
     yed))
 
-(defn out? [pos]
-  (or (neg? (:x pos)) (neg? (:y pos))))
+(defn out?
+  ([pos coord]
+   (neg? (coord pos)))
+  ([pos]
+   (or (neg? (:x pos)) (neg? (:y pos)))))
 
 (defn hole? [state]
   (zero? (:y (:position state))))
 
-(defn solid? [cur-pos lookup]
-  (let [item (some #(:solid? %) (lookup cur-pos))]
-    (or (some? item) (out? cur-pos))))
+(defn solid? [pos lookup]
+  (let [item (some #(:solid? %) (lookup pos))]
+    (some? item)))
 
 (defn empty-beneath? [cur-pos lookup]
   (let [beneath (pos (:x cur-pos) (dec (:y cur-pos)))]
-    (or (solid? beneath lookup) (out? cur-pos))))
+    (or (not (solid? beneath lookup)) (pos? (:y beneath)))))
+
+(defn solid-beneath? [cur-pos lookup]
+  (let [beneath (pos (:x cur-pos) (dec (:y cur-pos)))]
+    (or (solid? beneath lookup) (neg? (:y beneath)))))
 
 (defn interval [actions]
   (let [maximum (->> actions (max-by :velocity) (:velocity))]
@@ -65,7 +72,7 @@
       1
       maximum)))
 
-  (defn interpolation [p1 p2]
+(defn interpolation [p1 p2]
   (fn [t]
     (let [nx (+ (:x p1) (* t (- (:x p2) (:x p1))))
           ny (+ (:y p1) (* t (- (:y p2) (:y p1))))]
@@ -87,7 +94,7 @@
   (gmath/vector-2 (double (:x pos)) (double (:y pos))))
 
 (defn midpoint [start end]
-  (let [x (->(/ (+ (:x start) (:x end)) 2) (Math/floor) (Math/round))
+  (let [x (-> (/ (+ (:x start) (:x end)) 2) (Math/floor) (Math/round))
         y (-> (/ (+ (:y start) (:y end)) 2) (Math/ceil) (Math/round))]
     (pos x y)))
 
@@ -117,16 +124,29 @@
   (fn [pos actions]
     (loop [t 0
            cur pos
-           visited (tuples/tuple)]
-      (let [todo (deref-actions (conj actions :fall) lookup)
-            _ (println todo)
-            _ (println actions)
+           visited (tuples/tuple)
+           acts (conj actions :fall)]
+      (let [todo (deref-actions acts lookup)
             interpolated (<+> cur todo)
-            not-solid? #(not (solid? % lookup))]
-        (if (every? not-solid? interpolated)
-          (recur (inc t) (last interpolated) (into visited (drop-last interpolated)))
-          (let [non-solid (take-while not-solid? interpolated)]
-            (tuples/tuple (inc t) (into visited non-solid))))))))
+            not-solid? #(and (not (solid-beneath? % lookup)) (not (out? % :y)))]
+        (cond
+          (some? (find-some #(out? % :x) interpolated))
+          (let [valid (take-while #(or
+                                    (pos? (:x %))
+                                    (zero? (:x %))) interpolated)]
+            (recur (inc t)
+                   (->Pos 0 (-> valid (last-or cur) (:y)))
+                   (into visited valid)
+                   [:stand :fall]))
+
+          (every? not-solid? (rest interpolated)) (recur (inc t)
+                                                  (last interpolated)
+                                                  (into visited (drop-last interpolated))
+                                                  acts)
+          :else (let [non-solid (take-while #(and (not (solid? % lookup))
+                                                  (not (out? % :y))) interpolated)]
+                  (tuples/tuple (inc t) (into visited non-solid)))
+          )))))
 
 (defn ascend [lookup]
   (fn [start other-acts]
@@ -147,7 +167,7 @@
   (fn [pos action]
     (let [todo (deref-actions [action] lookup)
           interpolated (<+> pos todo)
-          can-stand? #(empty-beneath? % lookup)]
+          can-stand? #(solid-beneath? % lookup)]
       (if (every? can-stand? interpolated)
         (tuples/tuple 1 interpolated)
         (let [solid (vec (take-while can-stand? interpolated))
@@ -198,10 +218,18 @@
   (fn [state action]
     (let [previous (:previous-action state)
           position (:position state)
-          lookup (eta-pos world actions)]
+          lookup (eta-pos world actions)
+          call-move #(stateify ((move lookup) position %) %)]
       (match [action]
              [:jump] (stateify ((jump lookup) position previous) previous)
-             :else (stateify ((move lookup) position action) action)))))
+             [:walk-right] (call-move action)
+             [:walk-left] (call-move action)
+             [:run-right] (call-move action)
+             [:run-left] (call-move action)
+             [:stand] (call-move action)
+             :else (do
+                     (println "Unknown action")
+                     (tuples/tuple 0 [state]))))))
 
 (defn- reward-com [world actions rewards terminal?]
   (let [η (eta world actions)
@@ -217,34 +245,40 @@
            (* (count holes) (:solid rewards))
            end)))))
 
-; FIXME: Should the transition function teleport the agent back to his starting position if he falls in a hole?
 (defn- transition-com [world actions terminal?]
   (let [Ω (omega world actions)]
     (fn [state action]
-      (let [[_ path] (Ω state action)]
+      (let [[_ path] (Ω state action)
+            ;_ (print state)
+            ;_ (print " ")
+            ;_ (print action)
+            ;_ (println path)
+            ]
         (if-let [end (find-some terminal? path)]
           end
-          (last path))))))
-
-(def ^:privte default-actions all-actions)
+          (cond
+            (some #(out? (:position %)) path)
+            state
+            :else (last path)))))))
 
 (defn reward
   ([world terminal?]
-    (reward world default-actions Rewards terminal?))
+   (reward world all-actions Rewards terminal?))
   ([world actions terminal?]
-    (reward-com world actions Rewards terminal?))
+   (reward-com world actions Rewards terminal?))
   ([world actions rewards terminal?]
-    (reward-com world actions rewards terminal?)))
+   (reward-com world actions rewards terminal?)))
 
 (defn transition
   ([world terminal?]
-    (transition world default-actions terminal?))
+   (transition world all-actions terminal?))
   ([world actions terminal?]
-    (transition-com world actions terminal?)))
+   (transition-com world actions terminal?)))
 
 (defn terminal? [world]
   (let [max (max-by #(-> % (:position) (:x)) world)]
     (fn [state]
-      (= (-> state (:position) (:x)) (-> max (:position) (:x))))))
+      (>= (-> state (:position) (:x)) (-> max (:position) (:x))))))
 
-(def actions (-> all-actions (drop-last) (keys)))
+(defn actions [_]
+  (-> all-actions (drop-last) (keys)))
