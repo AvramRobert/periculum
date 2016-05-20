@@ -31,14 +31,14 @@
               :end   20
               })
 
-(def ^:private all-actions {:stand      (->Action 0 1 [0 0])
-                            :walk-left  (->Action 1 1 [-1 0])
-                            :walk-right (->Action 1 1 [1 0])
-                            :run-left   (->Action 2 1 [-1 0])
-                            :run-right  (->Action 2 1 [1 0])
-                            :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
-                            :fall       (->Action G 1 [0 -1])
-                            })
+(def all-actions {:stand      (->Action 0 1 [0 0])
+                  :walk-left  (->Action 1 1 [-1 0])
+                  :walk-right (->Action 1 1 [1 0])
+                  :run-left   (->Action 2 1 [-1 0])
+                  :run-right  (->Action 2 1 [1 0])
+                  :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
+                  :fall       (->Action G 1 [0 -1])
+                  })
 
 (defn update-pos [pos amount orient]
   (let [xed (assoc pos :x (+ (:x pos) (* amount (nth orient 0))))
@@ -112,7 +112,7 @@
                 (-> linear (last) (pos-to-vec))]
         spline (gmath/bezier points)
         values (for [t (range 0.0 1.0 0.1)]
-                 (.valueAt spline (new Vector2) t))]
+                 (gmath/bezier! spline :value-at (new Vector2) t))]
     (distinct
       (map (fn [v]
              (pos (Math/round (.x v)) (Math/round (.y v)))) values))))
@@ -140,9 +140,9 @@
                    [:stand :fall]))
 
           (every? not-solid? (rest interpolated)) (recur (inc t)
-                                                  (last interpolated)
-                                                  (into visited (drop-last interpolated))
-                                                  acts)
+                                                         (last interpolated)
+                                                         (into visited (drop-last interpolated))
+                                                         acts)
           :else (let [non-solid (take-while #(and (not (solid? % lookup))
                                                   (not (out? % :y))) interpolated)]
                   (tuples/tuple (inc t) (into visited non-solid)))
@@ -248,12 +248,7 @@
 (defn- transition-com [world actions terminal?]
   (let [Ω (omega world actions)]
     (fn [state action]
-      (let [[_ path] (Ω state action)
-            ;_ (print state)
-            ;_ (print " ")
-            ;_ (print action)
-            ;_ (println path)
-            ]
+      (let [[_ path] (Ω state action)]
         (if-let [end (find-some terminal? path)]
           end
           (cond

@@ -5,7 +5,8 @@
             [play-clj.g2d :refer :all]
             [play-clj.g2d-physics :refer :all]
             [periculum.world :refer [make-world m-struct pos]]
-            [clojure.core.match :refer [match]]))
+            [clojure.core.match :refer [match]]
+            [periculum.animated :as anim]))
 
 (defn wall-shape [entity]
   (let [pos (derive-pos entity)]
@@ -35,6 +36,12 @@
                   :set-color (color :scarlet)
                   :circle 0 0 half-block) :x (+ (:x pos) half-block) :y (+ (:y pos) half-block))))
 
+(defn agent-shape2 [x y]
+  (let [pos (block-pos x y)]
+    (assoc (shape :filled
+                  :set-color (color :scarlet)
+                  :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
+
 (defn agent-texture [x y]
   (let [pos (block-pos x y)]
     (assoc (texture "krabby.png")
@@ -48,12 +55,29 @@
   (fn [screen entities]
     (height! screen 600)))
 
-(declare periculum-game sprite-screen simple-screen value-screen)
+(declare periculum-game sprite-screen simple-screen)
 
-(defscreen value-screen
+(defn update-fps [entities]
+  (map (fn [e]
+         (case (:id e)
+           :fps (doto e (label! :set-text (str (game :fps))))
+           e)) entities))
+
+(defscreen simple-screen
            :on-show
            (fn [screen entities]
-             (update! screen :renderer (stage) :camera (orthographic)))
+             (update! screen :renderer (stage) :camera (orthographic))
+             (let [env (make-world world-config)
+                   walls (->> env
+                              (filter #(= (:type %) :wall))
+                              (map wall-shape))
+                   floors (->> env
+                               (filter #(= (:type %) :floor))
+                               (map floor-shape))
+                   player (agent-shape2 1 1)]
+               (flatten [(map #(assoc % :wall? true) walls)
+                         (map #(assoc % :floor? true) floors)
+                         [(anim/player-entity player :texture)]])))
 
            :on-resize resize
 
@@ -61,9 +85,23 @@
            (fn [screen entities]
              (clear!)
              (->> entities
-                  (show-qs)
-                  (render! screen))))
+                  ;(pause 50)
+                  ;(update-fps)
+                  ;(show-choice)
+                  (anim/apply-action)
+                  (render! screen)))
 
+           :on-key-down
+           (fn [screen entities]
+             (let [key (:key screen)
+                   do-act (comp anim/apply-action anim/select-action)]
+               (cond
+                 (= key (key-code :dpad-up))
+                 (do-act entities :jump)
+                 (= key (key-code :dpad-left))
+                 (do-act entities :walk-left)
+                 (= key (key-code :dpad-right))
+                 (do-act entities :run-right)))))
 
 (defscreen sprite-screen
            :on-show
@@ -78,11 +116,11 @@
                    floors (->> env
                                (filter #(= (:type %) :floor))
                                (map floor-texture))
-                   player (assoc (agent-texture 1 1) :e-type :texture)]
+                   player (agent-texture 1 1)]
                (flatten [[landscape]
                          (map #(assoc % :wall? true) walls)
                          (map #(assoc % :floor? true) floors)
-                         [(assoc player :player? true)]])))
+                         [(anim/player-entity player :texture)]])))
 
            :on-resize resize
 
@@ -93,41 +131,6 @@
                   (pause 100)
                   (show-choice)
                   (render! screen))))
-
-;:on-key-down
-;(fn [screen entities]
-;  (cond
-;    (= (:key screen) (key-code :dpad-left))
-;    (set-screen! @(resolve 'periculum.core/periculum-game)
-;                 @(resolve 'periculum.core/simple-screen))))
-
-(defscreen simple-screen
-           :on-show
-           (fn [screen entities]
-             (update! screen :renderer (stage) :camera (orthographic) :color :blue)
-             (let [env (make-world world-config)
-                   walls (->> env
-                              (filter #(= (:type %) :wall))
-                              (map wall-shape))
-                   floors (->> env
-                               (filter #(= (:type %) :floor))
-                               (map floor-shape))
-                   player (assoc (agent-shape 1 1) :e-type :geometric)]
-               (flatten [
-                         (map #(assoc % :wall? true) walls)
-                         (map #(assoc % :floor? true) floors)
-                         [(assoc player :player? true)]])))
-
-           :on-resize resize
-
-           :on-render
-           (fn [screen entities]
-             (clear!)
-             (->> entities
-                  ;(pause 50)
-                  (show-choice)
-                  (render! screen))))
-
 
 (defgame periculum-game
          :on-create
