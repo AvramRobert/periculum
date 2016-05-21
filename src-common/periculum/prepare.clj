@@ -24,7 +24,7 @@
 
 (def world-config {:floor     (m-struct 14 0 (pos 0 0))
                    :holes     [(pos 3 0) (pos 13 0) (pos 14 0) (pos 15 0)]
-                   :walls     [(m-struct 2 3 (pos 5 1)) (m-struct 2 3 (pos 10 1))]
+                   :walls     [(m-struct 2 3 (pos 6 1)) (m-struct 2 3 (pos 10 1))]
                    :platforms empty-vec
                    })
 
@@ -42,7 +42,7 @@
 
 
 (defn path-supplier [algorithm eps]
-  (let [data (conf 1.0 0.4 0.7)
+  (let [data (conf 1.0 0.2 0.7)
         start (state 1 1 :stand)
         policy (eps-greedy 0.6 greedy-by-max)
         terminal-f (terminal? world)

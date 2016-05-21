@@ -13,10 +13,6 @@
 (defn normalise [x y]
   (->Pos (/ x p/block-size) (/ y p/block-size)))
 
-;; FIXME: Look at descension again. Block sometimes stops next to solid
-;; It seems that, in some cases, the descension makes the block stop in the air, next to the actual solid.
-;; I believe it's because it sees that next to it, there is a solid on which it can stand, but
-;; stops right before reaching it. Perhaps due to `take-while`
 
 ;; FIXME: pick 4 points instead, and make them more meaningful
 ;; We pick because libGDX only allows Bezier curves of 1, 2 or 3rd degree

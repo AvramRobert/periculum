@@ -156,8 +156,8 @@
         expected-drl [(pos 1 4) (pos 0 3) (pos 0 3) (pos 0 2) (pos 0 1)]
         ]
     (is (and
-           (= path-ds expected-ds)
-           (= t-s-desc 2)
+          (= path-ds expected-ds)
+          (= t-s-desc 2)
           ))
     (is (and
           (= path-dwr expected-dwr)
@@ -180,20 +180,20 @@
         [t-s path-s] (Ω state2 :stand)
         expected-s [(pos 1 1)]
         state3 (->State (pos 3 1) :walk-right)
-        [t-jwr path-jwr] (Ω state3 :jump)
+        [t-jwr path-jwr] (Ω state3 :jump-right)
         expected-jwr [(pos 3 1) (pos 4 2) (pos 4 3) (pos 5 4) (pos 5 5) (pos 5 5) (pos 6 4)]]
     (is (and
           (= (map #(:position %) path-rr) expected-rr)
-          (= (-> path-rr (first) (:previous-action)) :run-right)
+          (= (-> path-rr first :previous-action) :run-right)
           (= t-rr 1)
           ))
     (is (and
           (= (map #(:position %) path-s) expected-s)
-          (= (-> path-s (first) (:previous-action)) :stand)
+          (= (-> path-s first :previous-action) :stand)
           (= t-s 1)))
     (is (and
           (= (map #(:position %) path-jwr) expected-jwr)
-          (= (-> path-jwr (first) (:previous-action) :walk-right))
+          (= (-> path-jwr first :previous-action) :jump-right)
           (= t-jwr 3)))))
 
 (deftest reward-test
@@ -206,7 +206,7 @@
         state4 (->State (pos 11 4) :stand)
         res-walk-fall-win (rewardf state4 :walk-right)
         state5 (->State (pos 4 1) :walk-right)
-        res-jump-hit-wall (rewardf state5 :jump)
+        res-jump-hit-wall (rewardf state5 :jump-right)
         state6 (->State (pos 0 1) :stand)
         res-run (rewardf state6 :run-right)]
     (is (= -1 res-walk-right))
@@ -231,24 +231,23 @@
     ))
 
 (deftest action-test
-  (let [acts (actions nil)
-        ks (-> test-actions (keys) (drop-last))]
-    (is (= acts ks))))
-
-(def world-config2 {:floor     (m-struct 11 0 (pos 0 0))
-                   :holes     [(pos 4 0) (pos 5 0)]
-                   :walls     [(m-struct 2 3 (pos 2 1))]
-                   :platforms [(m-struct 3 (pos 4 5))]})
-
-(def world2 (make-world world-config2))
-(def lookup2 (eta-pos world2 test-actions))
-(def jumping2 (jump lookup2))
-
-(deftest set-ss
-  (let [start (pos 2 1)
-        [_ path] (jumping2 start :run-right)
-        _ (println path)
-        ]))
-
+  (let [act-run-left (actions (->State nil :run-left))
+        expected-run-let [:stand
+                          :walk-left
+                          :walk-right
+                          :run-left
+                          :run-right
+                          :run-jump-left]
+        act-jump-up (actions (->State nil :jump-up))
+        expected-jump-up  [:stand
+                           :walk-left
+                           :walk-right
+                           :jump-up
+                           :run-left
+                           :run-right
+                           :jump-left
+                           :jump-right]]
+    (is (= act-run-left expected-run-let)
+        (= act-jump-up expected-jump-up))))
 
 (run-tests)

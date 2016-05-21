@@ -89,8 +89,8 @@
                     ;(pause 50)
                     ;(update-fps)
                     ;(show-choice)
-                    ;(do-act)
-                    (anim/apply-action)
+                    (do-act)
+                    ;(anim/apply-action)
                     (render! screen))))
 
            :on-key-down
@@ -98,7 +98,7 @@
              (let [key (:key screen)
                    do-act (comp anim/apply-action anim/supply-action)]
                (cond
-                 (= key (key-code :dpad-down))
+                 (= key (key-code :w))
                  (do-act entities :stand)
                  (= key (key-code :dpad-up))
                  (do-act entities :jump-up)
@@ -106,9 +106,9 @@
                  (do-act entities :walk-left)
                  (= key (key-code :dpad-right))
                  (do-act entities :walk-right)
-                 (= key (key-code :alt-left))
+                 (= key (key-code :q))
                  (do-act entities :jump-left)
-                 (= key (key-code :alt-right))
+                 (= key (key-code :e))
                  (do-act entities :jump-right)
                  (= key (key-code :a))
                  (do-act entities :run-jump-left)

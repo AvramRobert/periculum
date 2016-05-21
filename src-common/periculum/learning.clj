@@ -26,8 +26,8 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
-(def Rewards {:tic   -1
-              :solid -5
+(def Rewards {:tic   0
+              :solid -10
               :end   20
               })
 
@@ -104,11 +104,6 @@
 (defn pos-to-vec [pos]
   (gmath/vector-2 (double (:x pos)) (double (:y pos))))
 
-(defn midpoint [start end]
-  (let [x (-> (/ (+ (:x start) (:x end)) 2) (Math/floor) (Math/round))
-        y (-> (/ (+ (:y start) (:y end)) 2) (Math/ceil) (Math/round))]
-    (pos x y)))
-
 (defn <+> [start actions]
   "Simple Linear interpolation"
   (let [t (/ 1 (interval actions))
@@ -154,8 +149,7 @@
                                                          (last interpolated)
                                                          (into visited (drop-last interpolated))
                                                          acts)
-          :else (let [non-solid (take-while #(and (not (solid? % lookup))
-                                                  (not (out? % :y))) interpolated)]
+          :else (let [non-solid (take-while-inc not-solid? interpolated)]
                   (tuples/tuple (inc t) (into visited non-solid)))
           )))))
 
@@ -183,8 +177,8 @@
         (tuples/tuple 1 interpolated)
         (let [solid (vec (take-while can-stand? interpolated))
               non-solid (find-some #(not (can-stand? %)) interpolated)
-              [t fallen] (fall non-solid lookup)]
-          (tuples/tuple t (into solid fallen)))))))
+              [t descent] (fall non-solid lookup)]
+          (tuples/tuple t (into solid descent)))))))
 
 (defn jump [lookup]
   (fn [pos other-action]

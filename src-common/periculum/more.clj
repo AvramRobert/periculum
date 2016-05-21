@@ -41,6 +41,13 @@
     (fn [nmap [k v]]
       (assoc nmap k (f k v))) {} m))
 
+(defn take-while-inc [pred coll]
+  (loop [acc (tuples/tuple)
+         [h & tail] coll]
+    (if (pred h)
+      (recur (conj acc h) tail)
+      (conj acc h))))
+
 (defn pick-rnd [coll]
   (let [th (rand-int (count coll))]
     (if (vector? coll)
