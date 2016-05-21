@@ -101,11 +101,19 @@
                  (= key (key-code :dpad-down))
                  (do-act entities :stand)
                  (= key (key-code :dpad-up))
-                 (do-act entities :jump)
+                 (do-act entities :jump-up)
                  (= key (key-code :dpad-left))
                  (do-act entities :walk-left)
                  (= key (key-code :dpad-right))
-                 (do-act entities :walk-right)))))
+                 (do-act entities :walk-right)
+                 (= key (key-code :alt-left))
+                 (do-act entities :jump-left)
+                 (= key (key-code :alt-right))
+                 (do-act entities :jump-right)
+                 (= key (key-code :a))
+                 (do-act entities :run-jump-left)
+                 (= key (key-code :d))
+                 (do-act entities :run-jump-right)))))
 
 (defscreen sprite-screen
            :on-show

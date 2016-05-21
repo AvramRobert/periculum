@@ -31,14 +31,25 @@
               :end   20
               })
 
-(def all-actions {:stand      (->Action 0 1 [0 0])
-                  :walk-left  (->Action 1 1 [-1 0])
-                  :walk-right (->Action 1 1 [1 0])
-                  :run-left   (->Action 2 1 [-1 0])
-                  :run-right  (->Action 2 1 [1 0])
-                  :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
-                  :fall       (->Action G 1 [0 -1])
-                  })
+(def primitive-actions {:stand      (->Action 0 1 [0 0])
+                        :walk-left  (->Action 1 1 [-1 0])
+                        :walk-right (->Action 1 1 [1 0])
+                        :run-left   (->Action 2 1 [-1 0])
+                        :run-right  (->Action 2 1 [1 0])
+                        :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
+                        :fall       (->Action G 1 [0 -1])
+                        })
+
+(def all-actions [:stand
+                  :walk-left
+                  :walk-right
+                  :run-left
+                  :run-right
+                  :jump-left
+                  :jump-right
+                  :jump-up
+                  :run-jump-left
+                  :run-jump-right])
 
 (defn update-pos [pos amount orient]
   (let [xed (assoc pos :x (+ (:x pos) (* amount (nth orient 0))))
@@ -165,7 +176,7 @@
 
 (defn move [lookup]
   (fn [pos action]
-    (let [todo (deref-actions [action] lookup)
+    (let [todo (deref-actions (tuples/tuple action) lookup)
           interpolated (<+> pos todo)
           can-stand? #(solid-beneath? % lookup)]
       (if (every? can-stand? interpolated)
@@ -184,10 +195,9 @@
       (tuples/tuple (+ t T-apex) (into ascent descent)))))
 
 
-(defn stateify [time-position action]
+(defn to-state [time-position action]
   (let [[time ps] time-position]
-    (tuples/tuple time (map #(->State % action) ps))
-    ))
+    (tuples/tuple time (map #(->State % action) ps))))
 
 (defn eta-gen [world actions f]
   (fn [item]
@@ -215,21 +225,25 @@
              (filter #(= (:position %) item) -world))))
 
 (defn omega [world actions]
-  (fn [state action]
-    (let [previous (:previous-action state)
-          position (:position state)
-          lookup (eta-pos world actions)
-          call-move #(stateify ((move lookup) position %) %)]
-      (match [action]
-             [:jump] (stateify ((jump lookup) position previous) previous)
-             [:walk-right] (call-move action)
-             [:walk-left] (call-move action)
-             [:run-right] (call-move action)
-             [:run-left] (call-move action)
-             [:stand] (call-move action)
-             :else (do
-                     (println "Unknown action")
-                     (tuples/tuple 0 [state]))))))
+  (let [lookup (eta-pos world actions)]
+    (fn [state action]
+      (let [position (:position state)
+            call-move #(to-state ((move lookup) position %) %)
+            call-jump #(to-state ((jump lookup) position %) action)]
+        (case action
+          :jump-up (call-jump :stand)
+          :jump-left (call-jump :walk-left)
+          :jump-right (call-jump :walk-right)
+          :run-jump-left (call-jump :run-left)
+          :run-jump-right (call-jump :run-right)
+          :walk-left (call-move action)
+          :walk-right (call-move action)
+          :run-left (call-move action)
+          :run-right (call-move action)
+          :stand (call-move action)
+          (do
+            (println "Unknown action")
+            (tuples/tuple 0 [state])))))))
 
 (defn- reward-com [world actions rewards terminal?]
   (let [η (eta world actions)
@@ -251,14 +265,13 @@
       (let [[_ path] (Ω state action)]
         (if-let [end (find-some terminal? path)]
           end
-          (cond
-            (some #(out? (:position %)) path)
+          (if (some #(out? (:position %)) path)
             state
-            :else (last path)))))))
+            (last path)))))))
 
 (defn reward
   ([world terminal?]
-   (reward world all-actions Rewards terminal?))
+   (reward world primitive-actions Rewards terminal?))
   ([world actions terminal?]
    (reward-com world actions Rewards terminal?))
   ([world actions rewards terminal?]
@@ -266,7 +279,7 @@
 
 (defn transition
   ([world terminal?]
-   (transition world all-actions terminal?))
+   (transition world primitive-actions terminal?))
   ([world actions terminal?]
    (transition-com world actions terminal?)))
 
@@ -275,5 +288,26 @@
     (fn [state]
       (>= (-> state (:position) (:x)) (-> max (:position) (:x))))))
 
-(defn actions [_]
-  (-> all-actions (drop-last) (keys)))
+(defn actions [S]
+  (case (:previous-action S)
+    :run-left [:stand
+               :walk-left
+               :walk-right
+               :run-left
+               :run-right
+               :run-jump-left]
+
+    :run-right [:stand
+                :walk-left
+                :walk-right
+                :run-left
+                :run-right
+                :run-jump-right]
+    [:stand
+     :walk-left
+     :walk-right
+     :jump-up
+     :run-left
+     :run-right
+     :jump-left
+     :jump-right]))

@@ -6,8 +6,7 @@
     [clojure.core.async :as async]
     [clojure.core.match :refer [match]]
     [play-clj.math :as gmath]
-    [periculum.prepare :as p])
-  (:import (com.badlogic.gdx.math Vector2)))
+    [periculum.prepare :as p]))
 
 (def ^:const delta (/ 1 20))
 
@@ -34,7 +33,7 @@
    (norm-round (:x position) (:y position))))
 
 (defn path [state action]
-  (let [Ω (omega p/world all-actions)
+  (let [Ω (omega p/world primitive-actions)
         [_ p] (Ω state action)]
     p))
 
@@ -50,9 +49,7 @@
     (if (>= (:t entity) 1.0)
       (assoc entity
         :state (assoc (:state entity) :position (norm-round pos')
-                                      :previous-action (if (= :jump action-k)
-                                                         (-> entity :state :previous-action)
-                                                         action-k))
+                                      :previous-action action-k)
         :t 0.0
         :completed? true
         :current-action :stand)
