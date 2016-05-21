@@ -10,7 +10,6 @@
   (:import (com.badlogic.gdx.math Vector2)))
 
 (def ^:const delta (/ 1 20))
-(def command-chan (async/chan))
 
 (defn normalise [x y]
   (->Pos (/ x p/block-size) (/ y p/block-size)))
@@ -20,71 +19,94 @@
 ;; I believe it's because it sees that next to it, there is a solid on which it can stand, but
 ;; stops right before reaching it. Perhaps due to `take-while`
 
-;; FIXME: Add the following logic to the physics: After jumping, the previous action is reset to :stand
-
 ;; FIXME: pick 4 points instead, and make them more meaningful
 ;; We pick because libGDX only allows Bezier curves of 1, 2 or 3rd degree
 (defn pick-points [points]
   [(first points) (mid points) (last points)])
 
-(defn norm-round [x y]
-  (let [norm (normalise x y)]
-    (assoc norm
-      :x (Math/round ^Float (:x norm))
-      :y (Math/round ^Float (:y norm)))))
+(defn norm-round
+  ([x y]
+   (let [norm (normalise x y)]
+     (assoc norm
+       :x (Math/round ^Float (:x norm))
+       :y (Math/round ^Float (:y norm)))))
+  ([position]
+   (norm-round (:x position) (:y position))))
 
-(def path (omega p/world all-actions))
+(defn path [state action]
+  (let [Ω (omega p/world all-actions)
+        [_ p] (Ω state action)]
+    p))
+
+(defn apply-inter [interpolant t]
+  (let [vec-2 (gmath/bezier! interpolant :value-at (gmath/vector-2*) t)]
+    (->Pos (.x vec-2)
+           (.y vec-2))))
 
 (defn apply-inc [entity action-k]
   (let [f (:interpolator entity)
         t' (+ (:t entity) delta)
-        pos' (gmath/bezier! f :value-at (new Vector2) t')]
+        pos' (apply-inter f t')]
     (if (>= (:t entity) 1.0)
       (assoc entity
-        :state (assoc (:state entity)
-                 :position (norm-round (.x pos') (.y pos'))
-                 :previous-action (if (= action-k :jump)
-                                    :stand
-                                    action-k))
+        :state (assoc (:state entity) :position (norm-round pos')
+                                      :previous-action (if (= :jump action-k)
+                                                         (-> entity :state :previous-action)
+                                                         action-k))
         :t 0.0
         :completed? true
         :current-action :stand)
       (assoc entity
         :t t'
-        :x (.x pos')
-        :y (.y pos')))))
+        :x (:x pos')
+        :y (:y pos')))))
+
+(defn when-complete [entity f]
+  (if (:completed? entity)
+    (f entity)
+    entity))
+
+(defn when-not-complete [entity f]
+  (if (:completed? entity)
+    entity
+    (f entity)))
+
+(defn on-player [entities f]
+  (map (fn [e]
+         (case (:id e)
+           :player (f e)
+           e)) entities))
 
 (defn continue-action [entity action]
   (if-let [current (:current-action entity)]
     (if (= current action)
-      (if (:completed? entity)
-        entity
-        (apply-inc entity action))
+      (when-not-complete entity #(apply-inc % action))
       (apply-inc entity action))))
 
-(defn apply-action
-  [entities]
-  (map (fn [e]
-         (match [(:id e)]
-                [:player] (continue-action e (:current-action e))
-                :else e)) entities))
+(defn apply-action [entities]
+  (on-player entities #(continue-action % (:current-action %))))
 
-(defn select-action [entities action]
-  (map (fn [e]
-         (match [(:id e)]
-                [:player] (let [[_ all-states] (path (:state e) action)
-                                picked (pick-points all-states)
-                                real-path (map #(assoc %
-                                                 :x (* (-> % :position :x) p/block-size)
-                                                 :y (* (-> % :position :y) p/block-size))
-                                               picked)]
-                            (assoc e
-                              :current-action action
-                              :completed? false
-                              :interpolator (gmath/bezier (map pos-to-vec real-path))
-                              :t 0.0))
-                :else e)) entities))
+(defn select-action [entity action]
+  (let [real-path (->> (path (:state entity) action)
+                       (pick-points)
+                       (map #(->Pos (* (-> % :position :x) p/block-size)
+                                    (* (-> % :position :y) p/block-size)))
+                       (map pos-to-vec))]
+    (assoc entity
+      :current-action action
+      :completed? false
+      :interpolator (gmath/bezier real-path))))
 
+(defn attempt-next [entity]
+  (let [f (or-else #(select-action entity (:action %)) entity)]
+    (f (async/poll! p/command-chan))))
+
+(defn supply-action
+  ([entities]
+   (on-player entities #(when-complete % attempt-next)))
+  ([entities action]
+   (on-player entities (fn [e]
+                         (when-complete e #(select-action % action))))))
 
 (defn player-entity [shape body]
   (let [position (case body
@@ -95,7 +117,8 @@
       :body body
       :completed? true
       :state (->State position :stand)
-      :current-action :stand)))
+      :current-action :stand
+      :t 0.0)))
 
 
 

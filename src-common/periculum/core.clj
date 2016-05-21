@@ -84,24 +84,28 @@
            :on-render
            (fn [screen entities]
              (clear!)
-             (->> entities
-                  ;(pause 50)
-                  ;(update-fps)
-                  ;(show-choice)
-                  (anim/apply-action)
-                  (render! screen)))
+             (let [do-act (comp anim/apply-action anim/supply-action)]
+               (->> entities
+                    ;(pause 50)
+                    ;(update-fps)
+                    ;(show-choice)
+                    ;(do-act)
+                    (anim/apply-action)
+                    (render! screen))))
 
            :on-key-down
            (fn [screen entities]
              (let [key (:key screen)
-                   do-act (comp anim/apply-action anim/select-action)]
+                   do-act (comp anim/apply-action anim/supply-action)]
                (cond
+                 (= key (key-code :dpad-down))
+                 (do-act entities :stand)
                  (= key (key-code :dpad-up))
                  (do-act entities :jump)
                  (= key (key-code :dpad-left))
                  (do-act entities :walk-left)
                  (= key (key-code :dpad-right))
-                 (do-act entities :run-right)))))
+                 (do-act entities :walk-right)))))
 
 (defscreen sprite-screen
            :on-show

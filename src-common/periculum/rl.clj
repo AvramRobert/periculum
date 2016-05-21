@@ -218,7 +218,7 @@
 (defn greedy
   ([find-greedily]
    (fn [S As data _]
-     (if-let [known-As (get (:q-values data) S)]
+     (if-let [known-As (get-in data [:q-values S])]
        (find-greedily known-As)
        (pick-rnd As))))
   ([channel
@@ -438,3 +438,36 @@
                     q-eval
                     terminal?
                     identity)))
+
+(defn sarsa-max
+  ([policy
+    action-f
+    reward-f
+    transition-f
+    terminal?]
+   (q-learning greedy-by-max policy action-f reward-f transition-f terminal?))
+  ([channel
+    policy
+    action-f
+    reward-f
+    transition-f
+    terminal?]
+   (q-learning<- channel greedy-by-max policy action-f reward-f transition-f terminal?)))
+
+;; ========= Learned path =========
+
+(defn simple-chain [policy action-f transition-f terminal?]
+  (fn [start data]
+    (loop [S start
+           chain (tuples/tuple)]
+      (if (terminal? S)
+        chain
+        (let [A (policy S (action-f S) data 0)
+              S' (transition-f S A)]
+          (recur S' (conj chain (->Pair S A))))))))
+
+(defn derive-path
+  ([find-greedily action-f transition-f terminal?]
+   (simple-chain (greedy find-greedily) action-f transition-f terminal?))
+  ([channel find-greedily action-f transition-f terminal?]
+   (simple-chain (greedy channel find-greedily) action-f transition-f terminal?)))
