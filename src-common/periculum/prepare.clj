@@ -8,6 +8,8 @@
     [clojure.core.async :as async]
     [play-clj.core :refer [shape, color, color!]]))
 
+(def ^:const local-path "/home/robert/Repositories/periculum/resources/")
+
 (def policy-channel (async/chan (async/buffer 2048)))
 (def result-channel (async/chan))
 
@@ -26,6 +28,7 @@
                    })
 
 (def world (make-world world-config1))
+;(def world (world-from-pixmap (str local-path "level1.png")))
 
 (defn observe! [channel]
   (delayed-observer channel))

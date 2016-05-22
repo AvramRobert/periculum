@@ -17,7 +17,8 @@
                  [clj-tuple "0.2.2"]
                  [org.clojure/core.match "0.3.0-alpha4"]
                  [org.clojure/core.async "0.2.374"]
-                 [handy/map-values "1.0.1"]]
+                 [handy/map-values "1.0.1"]
+                 [net.mikera/imagez "0.10.0"]]
   
   :source-paths ["src" "src-common"]
   :javac-options ["-target" "1.6" "-source" "1.6" "-Xlint:-options"]

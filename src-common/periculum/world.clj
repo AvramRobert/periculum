@@ -1,8 +1,9 @@
 (ns periculum.world
   (use clojure.set)
-  (use [periculum.more :only [empty-vec]]))
-
-(def types '(:floor :wall))
+  (use [periculum.more :only [empty-vec]])
+  (:require [play-clj.core :refer [color color!]]
+            [mikera.image.colours :as clrs]
+            [mikera.image.core :as imgs]))
 
 (defrecord Pos [x y])
 
@@ -15,6 +16,17 @@
                    position
                    components
                    solid?])
+
+;; Floor: ffff00ff ;; ff6600
+;; Wall:  ff0000ff ;; ff0000
+
+(comment
+  (def world-conf {:floor     [<length, pos>]
+                   :holes     [<pos>]
+                   :walls     [<length, height, pos>]
+                   :platforms [<length, pos>]
+                   ;:other     [<pos> <pos> <pos>]           ; other things that can move
+                   }))
 
 (defn base [start length]
   (map #(->Pos (+ (:x start) %) (:y start)) (range 0 length)))
@@ -66,25 +78,38 @@
 
 (defn m-struct
   ([length height pos]
-    (->Struct length height pos))
+   (->Struct length height pos))
   ([length pos]
-    (->Struct length 1 pos)))
+   (->Struct length 1 pos)))
 
-(comment
-  (def world-conf {:floor     [<length, pos>]
-                   :holes     [<pos>]
-                   :walls     [<length, height, pos>]
-                   :platforms [<length, pos>]
-                   ;:other     [<pos> <pos> <pos>]           ; other things that can move
-                   }))
+(defn- img->entities [image]
+  (let [width (imgs/width image)
+        height (imgs/height image)]
+    (for [x (range 0 width)
+          y (range 0 height)]
+      (let [primal (-> image
+                       (imgs/get-pixel x y)
+                       (clrs/color))
+            clr (color (.getRed primal)
+                       (.getGreen primal)
+                       (.getBlue primal)
+                       (.getAlpha primal))]
+        (case (color! clr :to-string)
+          "ffff00ff" (solidify (pos x (- height 1 y)) :floor)
+          "ff0000ff" (solidify (pos x (- height 1 y)) :wall)
+          :none)))))
+
+(defn world-from-pixmap [path]
+  (let [image (imgs/load-image path)]
+    (->> image
+         (img->entities)
+         (filter #(not= % :none)))))
 
 ; FIXME: Write macro for world creation
-; FIXME: It would be quite practical to have something like `when-all`, which only executes the block when `all` bindings are non-nil
-; The world itself has a width and a length, which I should take into account somewhere, because that is how I know its bounds
 (defn make-world [config]
-  (let [{floor-conf :floor
-         holes-conf :holes
-         walls-conf :walls
+  (let [{floor-conf     :floor
+         holes-conf     :holes
+         walls-conf     :walls
          platforms-conf :platforms
          ;other-conf :other
          } config

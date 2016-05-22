@@ -1,12 +1,11 @@
 (ns periculum.core
   (:use [periculum.prepare]
         [periculum.animated])
-
   (:require [play-clj.core :refer :all]
             [play-clj.ui :refer :all]
             [play-clj.g2d :refer :all]
             [play-clj.g2d-physics :refer :all]
-            [periculum.world :refer [make-world m-struct pos]]
+            [periculum.world :refer [world-from-pixmap]]
             [clojure.core.match :refer [match]]))
 
 (defn wall-shape [entity]
@@ -18,7 +17,10 @@
 (defn wall-texture [entity]
   (let [pos (to-render-pos entity)]
     (assoc (texture "cobblestone.png")
-      :x (:x pos) :y (:y pos) :width block-size :height block-size)))
+      :x (:x pos)
+      :y (:y pos)
+      :width block-size
+      :height block-size)))
 
 (defn floor-shape [entity]
   (let [pos (to-render-pos entity)]
@@ -29,7 +31,10 @@
 (defn floor-texture [entity]
   (let [pos (to-render-pos entity)]
     (assoc (texture "grass_side.png")
-      :x (:x pos) :y (:y pos) :width block-size :height block-size)))
+      :x (:x pos)
+      :y (:y pos)
+      :width block-size
+      :height block-size)))
 
 (defn agent-shape [x y]
   (let [pos (block-pos x y)]
