@@ -1,32 +1,33 @@
 (ns periculum.core
-  (:use [periculum.prepare])
+  (:use [periculum.prepare]
+        [periculum.animated])
+
   (:require [play-clj.core :refer :all]
             [play-clj.ui :refer :all]
             [play-clj.g2d :refer :all]
             [play-clj.g2d-physics :refer :all]
             [periculum.world :refer [make-world m-struct pos]]
-            [clojure.core.match :refer [match]]
-            [periculum.animated :as anim]))
+            [clojure.core.match :refer [match]]))
 
 (defn wall-shape [entity]
-  (let [pos (derive-pos entity)]
+  (let [pos (to-render-pos entity)]
     (assoc (shape :filled
                   :set-color (color :coral)
                   :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
 (defn wall-texture [entity]
-  (let [pos (derive-pos entity)]
-    (assoc (texture "brick.png")
+  (let [pos (to-render-pos entity)]
+    (assoc (texture "cobblestone.png")
       :x (:x pos) :y (:y pos) :width block-size :height block-size)))
 
 (defn floor-shape [entity]
-  (let [pos (derive-pos entity)]
+  (let [pos (to-render-pos entity)]
     (assoc (shape :filled
                   :set-color (color :gray)
                   :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
 (defn floor-texture [entity]
-  (let [pos (derive-pos entity)]
+  (let [pos (to-render-pos entity)]
     (assoc (texture "grass_side.png")
       :x (:x pos) :y (:y pos) :width block-size :height block-size)))
 
@@ -34,71 +35,63 @@
   (let [pos (block-pos x y)]
     (assoc (shape :filled
                   :set-color (color :scarlet)
-                  :circle 0 0 half-block) :x (+ (:x pos) half-block) :y (+ (:y pos) half-block))))
+                  :rect 0 0 block-size block-size)
+      :x (:x pos)
+      :y (:y pos)
+      :animated? false)))
 
-(defn agent-shape2 [x y]
-  (let [pos (block-pos x y)]
-    (assoc (shape :filled
-                  :set-color (color :scarlet)
-                  :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
-
-(defn agent-texture [x y]
-  (let [pos (block-pos x y)]
-    (assoc (texture "krabby.png")
-      :x (:x pos) :y (:y pos) :width block-size :height block-size)))
-
-(defn pause [amount entities]
-  (Thread/sleep amount)
-  entities)
+(defn agent-texture [sheet]
+  (let [tiles (texture! sheet :split half-block half-block)]
+    (fn [x y]
+      (let [pos (block-pos x y)]
+        (assoc (texture (aget tiles 0 0))
+          :x (:x pos)
+          :y (:y pos)
+          :width block-size
+          :height block-size
+          :animated? true
+          :tiles tiles)))))
 
 (def resize
   (fn [screen entities]
-    (height! screen 600)))
+    (height! screen (:height screen))
+    (on-background entities
+                   #(assoc % :height (:height screen)
+                             :width (:width screen)))))
+
+(def rendering
+  (fn [screen entities]
+    (clear!)
+    (let [do-act (comp apply-action supply-action)]
+      (->> entities
+           (do-act)
+           (render! screen)))))
 
 (declare periculum-game sprite-screen simple-screen)
-
-(defn update-fps [entities]
-  (map (fn [e]
-         (case (:id e)
-           :fps (doto e (label! :set-text (str (game :fps))))
-           e)) entities))
 
 (defscreen simple-screen
            :on-show
            (fn [screen entities]
              (update! screen :renderer (stage) :camera (orthographic))
-             (let [env (make-world world-config)
-                   walls (->> env
+             (let [walls (->> world
                               (filter #(= (:type %) :wall))
                               (map wall-shape))
-                   floors (->> env
+                   floors (->> world
                                (filter #(= (:type %) :floor))
                                (map floor-shape))
-                   player (agent-shape2 1 1)]
+                   player (agent-shape 1 1)]
                (flatten [(map #(assoc % :wall? true) walls)
                          (map #(assoc % :floor? true) floors)
-                         [(anim/player-entity player :texture)]])))
+                         [(player-entity player)]])))
 
            :on-resize resize
-
-           :on-render
-           (fn [screen entities]
-             (clear!)
-             (let [do-act (comp anim/apply-action anim/supply-action)]
-               (->> entities
-                    ;(pause 50)
-                    ;(update-fps)
-                    ;(show-choice)
-                    (do-act)
-                    ;(anim/apply-action)
-                    (render! screen))))
-
+           :on-render rendering
            :on-key-down
            (fn [screen entities]
              (let [key (:key screen)
-                   do-act (comp anim/apply-action anim/supply-action)]
+                   do-act (comp apply-action supply-action)]
                (cond
-                 (= key (key-code :w))
+                 (= key (key-code :s))
                  (do-act entities :stand)
                  (= key (key-code :dpad-up))
                  (do-act entities :jump-up)
@@ -110,41 +103,66 @@
                  (do-act entities :jump-left)
                  (= key (key-code :e))
                  (do-act entities :jump-right)
-                 (= key (key-code :a))
+                 (= key (key-code :z))
                  (do-act entities :run-jump-left)
+                 (= key (key-code :c))
+                 (do-act entities :run-jump-right)
+                 (= key (key-code :a))
+                 (do-act entities :run-left)
                  (= key (key-code :d))
-                 (do-act entities :run-jump-right)))))
+                 (do-act entities :run-right)))))
 
 (defscreen sprite-screen
            :on-show
            (fn [screen entities]
              (update! screen :renderer (stage) :camera (orthographic))
-             (let [env (make-world world-config)
+             (let [animation-sheet (texture "sheet.png")
+                   player-anim (agent-texture animation-sheet)
                    landscape (assoc (texture "wall1.jpg")
-                               :width (game :width) :height (game :height))
-                   walls (->> env
+                               :id :background
+                               :width (:width screen)
+                               :height (:height screen))
+                   walls (->> world
                               (filter #(= (:type %) :wall))
                               (map wall-texture))
-                   floors (->> env
+                   floors (->> world
                                (filter #(= (:type %) :floor))
                                (map floor-texture))
-                   player (agent-texture 1 1)]
+                   player (player-anim 1 1)]
                (flatten [[landscape]
                          (map #(assoc % :wall? true) walls)
                          (map #(assoc % :floor? true) floors)
-                         [(anim/player-entity player :texture)]])))
+                         [(player-entity player)]])))
 
            :on-resize resize
-
-           :on-render
+           :on-render rendering
+           :on-key-down
            (fn [screen entities]
-             (clear!)
-             (->> entities
-                  (pause 100)
-                  (show-choice)
-                  (render! screen))))
+             (let [key (:key screen)
+                   do-act (comp apply-action supply-action)]
+               (cond
+                 (= key (key-code :s))
+                 (do-act entities :stand)
+                 (= key (key-code :dpad-up))
+                 (do-act entities :jump-up)
+                 (= key (key-code :dpad-left))
+                 (do-act entities :walk-left)
+                 (= key (key-code :dpad-right))
+                 (do-act entities :walk-right)
+                 (= key (key-code :q))
+                 (do-act entities :jump-left)
+                 (= key (key-code :e))
+                 (do-act entities :jump-right)
+                 (= key (key-code :z))
+                 (do-act entities :run-jump-left)
+                 (= key (key-code :c))
+                 (do-act entities :run-jump-right)
+                 (= key (key-code :a))
+                 (do-act entities :run-left)
+                 (= key (key-code :d))
+                 (do-act entities :run-right)))))
 
 (defgame periculum-game
          :on-create
          (fn [this]
-           (set-screen! this simple-screen)))
+           (set-screen! this sprite-screen)))
