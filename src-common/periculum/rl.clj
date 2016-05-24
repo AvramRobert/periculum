@@ -56,6 +56,18 @@
                   (algorithm start data episode)) config (range 1 eps))
         (apply close-all! channels)))))
 
+(defn control->
+  ([algorithm config channel]
+   (control-> algorithm config channel 1))
+  ([algorithm config channel interval]
+   (fn [start eps]
+     (reduce (fn [data episode]
+               (when (zero? (mod episode interval))
+                 (println episode)
+                 (async/>!! channel {:episode episode
+                                     :data    data}))
+               (algorithm start data episode)) config (range 1 eps))
+     (async/close! channel))))
 
 ;; ========= Utils =========
 (defn action-mean [As]
@@ -450,18 +462,21 @@
 
 ;; ========= Learned path =========
 
-(defn simple-chain [policy action-f transition-f terminal?]
+(defn simple-chain [policy action-f transition-f reward-f terminal?]
   (fn [start data]
     (loop [S start
            chain (tuples/tuple)]
       (if (terminal? S)
         chain
         (let [A (policy S (action-f S) data 0)
+              R (reward-f S A)
               S' (transition-f S A)]
-          (recur S' (conj chain (->Pair S A))))))))
+          (recur S' (conj chain (->Sample S A R))))))))
 
 (defn derive-path
-  ([find-greedily action-f transition-f terminal?]
-   (simple-chain (greedy find-greedily) action-f transition-f terminal?))
-  ([channel find-greedily action-f transition-f terminal?]
-   (simple-chain (greedy channel find-greedily) action-f transition-f terminal?)))
+  ([action-f transition-f reward-f terminal?]
+   (derive-path greedy-by-max action-f transition-f reward-f terminal?))
+  ([find-greedily action-f transition-f reward-f terminal?]
+   (simple-chain (greedy find-greedily) action-f transition-f reward-f terminal?))
+  ([channel find-greedily action-f transition-f reward-f terminal?]
+   (simple-chain (greedy channel find-greedily) action-f transition-f reward-f terminal?)))

@@ -7,7 +7,7 @@
     [clojure.core.match :refer [match]]
     [play-clj.math :as gmath]
     [play-clj.g2d :refer [texture texture!]]
-    [periculum.prepare :as p]))
+    [periculum.dsl :as p]))
 
 (def ^:const delta (/ 1 20))
 (def ^:const fpa 5)

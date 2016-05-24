@@ -1,5 +1,5 @@
 (ns periculum.core
-  (:use [periculum.prepare]
+  (:use [periculum.dsl]
         [periculum.animated])
   (:require [play-clj.core :refer :all]
             [play-clj.ui :refer :all]
