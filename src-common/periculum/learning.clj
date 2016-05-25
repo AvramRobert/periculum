@@ -149,7 +149,7 @@
                                                          (last interpolated)
                                                          (into visited (drop-last interpolated))
                                                          acts)
-          :else (let [non-solid (take-while-inc not-solid? interpolated)]
+          :else (let [non-solid (take-while+ not-solid? interpolated)]
                   (tuples/tuple (inc t) (into visited non-solid)))
           )))))
 

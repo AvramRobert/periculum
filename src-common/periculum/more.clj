@@ -41,7 +41,7 @@
     (fn [nmap [k v]]
       (assoc nmap k (f k v))) {} m))
 
-(defn take-while-inc [pred coll]
+(defn take-while+ [pred coll]
   (loop [acc (tuples/tuple)
          [h & tail] coll]
     (if (pred h)
@@ -71,3 +71,7 @@
   (if (empty? coll)
     else
     (last coll)))
+
+(defn foreach [f coll]
+  (reduce #(let [_ (f %2)]
+            %1) nil coll))

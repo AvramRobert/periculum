@@ -37,18 +37,18 @@
 
 (def choice-observer (observe! policy-channel))
 
-(defn plotted [channel algorithm start eps interval]
-  (let [data (conf 1.0 0.4 0.7)
-        policy (eps-greedy 0.6)
-        terminal-f (terminal? world)
-        action-f actions
-        transition-f (transition world terminal-f)
-        reward-f (reward world terminal-f)
-        exp-algorithm (algorithm policy action-f reward-f transition-f terminal-f)
-        aggregate (monitor-greedily start action-f transition-f reward-f terminal-f)
-        ctrl (control-> exp-algorithm data channel interval)
-        _ (ctrl start eps)]
-    (-> channel (aggregate exp-per-eps) as-lines)))
+;(defn plotted [channel algorithm start eps interval]
+;  (let [data (conf 1.0 0.4 0.7)
+;        policy (eps-greedy 0.6)
+;        terminal-f (terminal? world)
+;        action-f actions
+;        transition-f (transition world terminal-f)
+;        reward-f (reward world terminal-f)
+;        exp-algorithm (algorithm policy action-f reward-f transition-f terminal-f)
+;        aggregate (monitor-greedily start action-f transition-f reward-f terminal-f)
+;        ctrl (control-> exp-algorithm data channel interval)
+;        _ (ctrl start eps)]
+;    (-> channel (aggregate reward-per-episodes) as-lines)))
 
 (defn path-supplier [algorithm eps]
   (let [data (conf 1.0 0.2 0.7)
@@ -104,18 +104,18 @@
   ([x y action modules]
    (assoc modules :start (state x y action))))
 
-(defn plot-with [channel transform plot-f modules]
+(defn plot [as-dataset modules]
   (let [{start        :start
          action-f     :action
          reward-f     :reward
          transition-f :transition
          terminal-f   :terminal} modules
-        aggregate (monitor-greedily start action-f transition-f reward-f terminal-f)]
+        capture-f (capture-greedy start action-f transition-f reward-f terminal-f)]
     (assoc modules
-      :plot-channel channel
-      :aggregate aggregate
-      :transformation transform
-      :plotting-f plot-f)))
+      :plot-channel (async/chan 4096)
+      :data-capture capture-f
+      :data-set-f as-dataset)))
+
 
 (defn do-run!
   ([eps modules]
@@ -125,22 +125,21 @@
          run (control algorithm data)]
      (run start eps)))
   ([eps interval modules]
-   (let [{start     :start
-          data      :data
-          algorithm :algorithm
-          channel   :plot-channel
-          aggregate :aggregate
-          transform :transformation
-          plot-f    :plotting-f} modules
+   (let [{start      :start
+          data       :data
+          algorithm  :algorithm
+          channel    :plot-channel
+          capture-f  :data-capture
+          as-dataset :data-set-f} modules
          run (control-> algorithm data channel interval)
          _ (run start eps)
-         _ (-> channel (aggregate transform) plot-f)]
+         _ (-> channel (monitor capture-f
+                                as-dataset))]
      )))
 
 ;; FIXME: Expand
-;; FIXME: Look at `control->`, make it return its q-values and implement a `continue` and a `retry` function
+;; FIXME: Look at `control->`, make it return its q-values and implement a `continue` function
 ;; `continue` should handle the boilerplate of continuing the computation
-;; `retry` should handle the boilerplate of restarting the same computation
 
 (defn example [eps]
   (->> world
@@ -149,5 +148,5 @@
        (data 1.0)
        (start-with 1 1)
        (algorithm monte-carlo)
-       (plot-with plot-channel exp-per-eps as-lines)
+       (plot (reward-per-action))
        (do-run! eps 100)))

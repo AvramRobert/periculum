@@ -473,6 +473,15 @@
               S' (transition-f S A)]
           (recur S' (conj chain (->Sample S A R))))))))
 
+(defn random-traj [policy action-f transition-f reward-f terminal?]
+  (fn [start data]
+    (let [traj (lazy-traj policy action-f reward-f transition-f)]
+      (take-while #(not (terminal? (:state %))) (traj start data 0)))))
+
+
+(defn random-path [action-f transition-f reward-f terminal?]
+  (random-traj eps-balanced action-f transition-f reward-f terminal?))
+
 (defn derive-path
   ([action-f transition-f reward-f terminal?]
    (derive-path greedy-by-max action-f transition-f reward-f terminal?))
