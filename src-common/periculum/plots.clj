@@ -5,8 +5,7 @@
     [incanter.stats]
     [incanter.datasets]
     [periculum.more])
-  (:require [incanter.io :as io]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [periculum.rl :as rl]
             [clj-tuple :as tuples]))
 
@@ -154,6 +153,19 @@
       {:x episode
        :y (count chain)}) data))
 
+(defn- mse|eps [expectation-chain data]
+  (map
+    (fn [{episode :episode
+          chain   :markov-chain}]
+      (let [largest (->> [expectation-chain chain] (max-by count) count)
+            predicted (->> chain (map :reward) (pad-left-to largest))
+            expected (->> expectation-chain (map :reward) (pad-left-to largest))
+            _ (println expected)
+            _ (println predicted)]
+        {:x episode
+         :y (mse predicted expected)}))
+    data))
+
 (defn reward-per-episode
   ([]
    (reward-per-episode ""))
@@ -202,4 +214,15 @@
           (scatter-out! title
                         "Actions"
                         "Rewards")))))
+
+(defn mse-per-epsiode
+  ([expectation-chain]
+   (mse-per-epsiode expectation-chain ""))
+  ([expectation-chain title]
+   (fn [data]
+     (->> data
+          (mse|eps expectation-chain)
+          (merged-lines! title
+                         "Episodes"
+                         "Mean squared error")))))
 

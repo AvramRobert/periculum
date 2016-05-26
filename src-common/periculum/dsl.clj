@@ -13,7 +13,7 @@
 
 (def policy-channel (async/chan 2048))
 (def result-channel (async/chan))
-(def plot-channel (async/chan 4096))
+(def expect-channel (async/chan))
 
 (defn state [x y action]
   (->State (->Pos x y) action))
@@ -37,18 +37,30 @@
 
 (def choice-observer (observe! policy-channel))
 
-;(defn plotted [channel algorithm start eps interval]
-;  (let [data (conf 1.0 0.4 0.7)
-;        policy (eps-greedy 0.6)
-;        terminal-f (terminal? world)
-;        action-f actions
-;        transition-f (transition world terminal-f)
-;        reward-f (reward world terminal-f)
-;        exp-algorithm (algorithm policy action-f reward-f transition-f terminal-f)
-;        aggregate (monitor-greedily start action-f transition-f reward-f terminal-f)
-;        ctrl (control-> exp-algorithm data channel interval)
-;        _ (ctrl start eps)]
-;    (-> channel (aggregate reward-per-episodes) as-lines)))
+(def winning-seq [:walk-left
+                  :run-right
+                  :run-jump-right
+                  :jump-right
+                  :jump-right])
+
+(defn actions->sample [start transition-f reward-f]
+  (fn [action-seq]
+    (->> action-seq
+         (reduce
+           (fn [states action]
+             (let [S (last states)
+                   S' (transition-f S action)]
+               (conj states S')))
+           [start])
+         (partition 2 1)
+         (reduce
+           (fn [n-v, elm]
+             (let [f (first elm)
+                   s (second elm)]
+               (conj n-v (->Pair f (:previous-action s))))) [])
+         (map
+           (fn [pair]
+             (->Sample (:state pair) (:action pair) (reward-f (:state pair) (:action pair))))))))
 
 (defn path-supplier [algorithm eps]
   (let [data (conf 1.0 0.2 0.7)
@@ -104,18 +116,29 @@
   ([x y action modules]
    (assoc modules :start (state x y action))))
 
-(defn plot [as-dataset modules]
-  (let [{start        :start
-         action-f     :action
-         reward-f     :reward
-         transition-f :transition
-         terminal-f   :terminal} modules
-        capture-f (capture-greedy start action-f transition-f reward-f terminal-f)]
-    (assoc modules
-      :plot-channel (async/chan 4096)
-      :data-capture capture-f
-      :data-set-f as-dataset)))
+(defn plot
+  ([modules]
+   (plot (:data-set-f modules) modules))
+  ([as-dataset modules]
+   (let [{start        :start
+          action-f     :action
+          reward-f     :reward
+          transition-f :transition
+          terminal-f   :terminal} modules
+         capture-f (capture-greedy start action-f transition-f reward-f terminal-f)]
+     (assoc modules
+       :plot-channel (async/chan 4096)
+       :data-capture capture-f
+       :data-set-f as-dataset))))
 
+(defn with-expectation [plot-f modules]
+  (let [{start        :start
+         transition-f :transition
+         reward-f     :reward} modules
+        f (actions->sample start transition-f reward-f)
+        g (plot-f (f winning-seq))]
+    (assoc modules
+      :data-set-f g)))
 
 (defn do-run!
   ([eps modules]
@@ -124,14 +147,14 @@
           algorithm :algorithm} modules
          run (control algorithm data)]
      (run start eps)))
-  ([eps interval modules]
-   (let [{start      :start
-          data       :data
-          algorithm  :algorithm
-          channel    :plot-channel
-          capture-f  :data-capture
-          as-dataset :data-set-f} modules
-         run (control-> algorithm data channel interval)
+  ([eps p modules]
+   (let [{start        :start
+          data         :data
+          algorithm    :algorithm
+          channel      :plot-channel
+          capture-f    :data-capture
+          as-dataset   :data-set-f} modules
+         run (control-> algorithm data channel p)
          _ (run start eps)
          _ (-> channel (monitor capture-f
                                 as-dataset))]
@@ -147,6 +170,7 @@
        (policy (eps-greedy 0.6))
        (data 1.0)
        (start-with 1 1)
-       (algorithm monte-carlo)
-       (plot (reward-per-action))
-       (do-run! eps 100)))
+       (algorithm sarsa-max)
+       (with-expectation mse-per-epsiode)
+       (plot)
+       (do-run! eps #(and (> % 200) (zero? (mod % 100))))))

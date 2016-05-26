@@ -59,10 +59,10 @@
 (defn control->
   ([algorithm config channel]
    (control-> algorithm config channel 1))
-  ([algorithm config channel interval]
+  ([algorithm config channel p]
    (fn [start eps]
      (reduce (fn [data episode]
-               (when (zero? (mod episode interval))
+               (when (p episode)
                  (println episode)
                  (async/>!! channel {:episode episode
                                      :data    data}))
@@ -76,6 +76,9 @@
 
 (defn v-π [data]
   (update data :q-values #(map-values action-mean %)))
+
+(defn total-reward [chain]
+  (reduce #(+ %1 (:reward %2)) 0.0 chain))
 
 (defn discount [chain γ]
   (map-indexed (fn [idx sample]
@@ -462,6 +465,7 @@
 
 ;; ========= Learned path =========
 
+;; THIS IS PROBLEMATIC
 (defn simple-chain [policy action-f transition-f reward-f terminal?]
   (fn [start data]
     (loop [S start

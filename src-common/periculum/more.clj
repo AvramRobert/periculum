@@ -75,3 +75,22 @@
 (defn foreach [f coll]
   (reduce #(let [_ (f %2)]
             %1) nil coll))
+
+(defn pad-left-to [n coll]
+  (let [size (count coll)]
+    (if (= size n)
+      coll
+      (-> coll
+          (list)
+          (into (take (- n size) (repeat 0)))
+          flatten))))
+
+(defn mse [predicted expected]
+  (->>
+    (zipmap predicted expected)
+    (map (fn [[p e]] (Math/pow (- e p) 2)))
+    (reduce +)
+    (* (/ 1 (count predicted)))))
+
+(defn rmse [predicted expected]
+  (Math/sqrt (mse predicted expected)))
