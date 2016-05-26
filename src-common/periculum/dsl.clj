@@ -37,50 +37,38 @@
 
 (def choice-observer (observe! policy-channel))
 
-(def winning-seq [:walk-left
-                  :run-right
-                  :run-jump-right
-                  :jump-right
-                  :jump-right])
-
-(defn actions->sample [start transition-f reward-f]
-  (fn [action-seq]
-    (->> action-seq
-         (reduce
-           (fn [states action]
-             (let [S (last states)
-                   S' (transition-f S action)]
-               (conj states S')))
-           [start])
-         (partition 2 1)
-         (reduce
-           (fn [n-v, elm]
-             (let [f (first elm)
-                   s (second elm)]
-               (conj n-v (->Pair f (:previous-action s))))) [])
-         (map
-           (fn [pair]
-             (->Sample (:state pair) (:action pair) (reward-f (:state pair) (:action pair))))))))
+(defn make-sample [reward-f]
+  (fn [path]
+    (map #(->Sample (:state %) (:action %) (reward-f (:state %) (:action %))) path)))
 
 (defn path-supplier [algorithm eps]
-  (let [data (conf 1.0 0.2 0.7)
+  (let [chan (async/chan 4096)
+        data (conf 1.0 0.2 0.7)
         start (state 1 1 :stand)
-        policy (eps-greedy 0.6)
+        policy (eps-greedy 0.7)
         terminal-f (terminal? world)
         action-f actions
         transition-f (transition world terminal-f)
         reward-f (reward world terminal-f)
         exp-algorithm (algorithm policy action-f reward-f transition-f terminal-f)
-        ctrl (control exp-algorithm data)
-        best (derive-path action-f transition-f reward-f terminal-f)]
-    (let [thread-chan (ctrl start eps)
-          new-data (async/<!! thread-chan)
-          path (best start new-data)]
-      path)))
-;(for [e path]
-;  (async/>!! result-channel e))
+        sampling (make-sample reward-f)
+        plot-f (fn [data]
+                 (let [e (async/<!! expect-channel)
+                       f (mse-per-epsiode (sampling e))]
+                   (f data)))
+        capture-f (capture-greedy start transition-f reward-f terminal-f)
+        run! (control-> exp-algorithm
+                        data
+                        chan
+                        #(and (> % 100) (zero? (mod % 100))))
+        _ (run! start eps)
+        _ (monitor chan capture-f plot-f)
+        ;best (derive-path transition-f reward-f terminal-f)
+        ]))
 
 ;; FIXME: PLEASE, MACRO. WRITE A BLOODY MACRO. PLEASE
+
+;; FIXME: Something is fucked up in my dsl
 
 (defn primary [loc-world]
   (let [terminal-f (terminal? loc-world)
@@ -121,44 +109,79 @@
    (plot (:data-set-f modules) modules))
   ([as-dataset modules]
    (let [{start        :start
-          action-f     :action
           reward-f     :reward
           transition-f :transition
           terminal-f   :terminal} modules
-         capture-f (capture-greedy start action-f transition-f reward-f terminal-f)]
+         capture-f (capture-greedy start transition-f reward-f terminal-f)]
      (assoc modules
        :plot-channel (async/chan 4096)
        :data-capture capture-f
        :data-set-f as-dataset))))
 
-(defn with-expectation [plot-f modules]
+(def plot-mean-squared
+  (fn [modules]
+    (let [exp-f (fn []
+                  (let [e (async/<!! expect-channel)]
+                    (repeat e)))
+          {start        :start
+           reward-f     :reward
+           transition-f :transition
+           terminal-f   :terminal} modules
+          g (make-sample reward-f)
+          capture-f (capture-greedy start transition-f reward-f terminal-f)]
+      (assoc modules
+        :plot-channel (async/chan 4096)
+        :data-capture capture-f
+        :data-set-f (fn []
+                      (let [expect (exp-f)]
+                        (fn [data]
+                          (let [f (mse-per-epsiode (->> expect first g))]
+                            (f data)))))))))
+
+
+(defn echo-best [modules]
   (let [{start        :start
          transition-f :transition
-         reward-f     :reward} modules
-        f (actions->sample start transition-f reward-f)
-        g (plot-f (f winning-seq))]
-    (assoc modules
-      :data-set-f g)))
+         reward-f     :reward
+         terminal-f   :terminal
+         channel      :q-channel
+         } modules
+        best-path (derive-path transition-f reward-f terminal-f)]
+    (let [new-data (async/<!! channel)
+          path (best-path start new-data)]
+      (for [sample path]
+        (async/go (async/>! result-channel sample))))))
 
 (defn do-run!
   ([eps modules]
    (let [{start     :start
           data      :data
           algorithm :algorithm} modules
-         run (control algorithm data)]
-     (run start eps)))
+         run! (control algorithm data)
+         channel (run! start eps)]
+     (assoc modules
+       :q-channel channel)))
   ([eps p modules]
-   (let [{start        :start
-          data         :data
-          algorithm    :algorithm
-          channel      :plot-channel
-          capture-f    :data-capture
-          as-dataset   :data-set-f} modules
-         run (control-> algorithm data channel p)
-         _ (run start eps)
+   (let [{start      :start
+          data       :data
+          algorithm  :algorithm
+          channel    :plot-channel
+          capture-f  :data-capture
+          as-dataset :data-set-f} modules
+         run! (control-> algorithm data channel p)
+         res-channel (run! start eps)
          _ (-> channel (monitor capture-f
-                                as-dataset))]
-     )))
+                                (as-dataset)))]
+     (assoc modules
+       :q-channel res-channel))))
+
+
+(defn continually [f modules]
+  (letfn [(r [modules]
+            (fn [eps]
+              (let [res (f eps modules)]
+                (r res))))]
+    (r modules)))
 
 ;; FIXME: Expand
 ;; FIXME: Look at `control->`, make it return its q-values and implement a `continue` function
@@ -171,6 +194,5 @@
        (data 1.0)
        (start-with 1 1)
        (algorithm sarsa-max)
-       (with-expectation mse-per-epsiode)
-       (plot)
-       (do-run! eps #(and (> % 200) (zero? (mod % 100))))))
+       (do-run! eps)                                        ;#(and (> % 200) (zero? (mod % 100)))
+       (echo-best)))

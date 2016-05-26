@@ -60,8 +60,8 @@
           (capture f)
           all))))
 
-(defn capture-greedy [start action-f transition-f reward-f terminal?]
-  (let [get-greedy (rl/random-path action-f transition-f reward-f terminal?)]
+(defn capture-greedy [start transition-f reward-f terminal?]
+  (let [get-greedy (rl/derive-path transition-f reward-f terminal?)]
     (fn [data]
       {:episode      (:episode data)
        :markov-chain (get-greedy start (:data data))
@@ -160,10 +160,10 @@
       (let [largest (->> [expectation-chain chain] (max-by count) count)
             predicted (->> chain (map :reward) (pad-left-to largest))
             expected (->> expectation-chain (map :reward) (pad-left-to largest))
-            _ (println expected)
-            _ (println predicted)]
+            _ (println predicted)
+            _ (println expected)]
         {:x episode
-         :y (mse predicted expected)}))
+         :y (rmse predicted expected)}))
     data))
 
 (defn reward-per-episode

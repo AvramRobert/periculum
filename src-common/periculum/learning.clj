@@ -28,7 +28,7 @@
 (def G (gravity H-max T-apex))
 (def Rewards {:tic   0
               :solid -10
-              :end   20
+              :end   15
               })
 
 (def primitive-actions {:stand      (->Action 0 1 [0 0])
@@ -236,7 +236,7 @@
           :run-right (call-move action)
           :stand (call-move action)
           (do
-            (println "Unknown action")
+            (println "Unknown action: " action)
             (tuples/tuple 0 [state])))))))
 
 (defn- reward-com [world actions rewards terminal?]

@@ -45,6 +45,8 @@
       (println "Executing")
       (reduce
         (fn [data episode]
+          (when (zero? (mod episode 100))
+            (println episode))
           (algorithm start data episode)) config (range 1 eps)))))
 
 (defn control<- [algorithm config & channels]
@@ -58,7 +60,7 @@
 
 (defn control->
   ([algorithm config channel]
-   (control-> algorithm config channel 1))
+   (control-> algorithm config channel #(zero? (mod % 1))))
   ([algorithm config channel p]
    (fn [start eps]
      (reduce (fn [data episode]
@@ -282,11 +284,11 @@
 ;; ========= SARSA(1) =========
 
 (defn sarsa-update [S A R S' A' data]
-  (let [α (:alpha data)
-        γ (:gamma data)
+  (let [alpha (:alpha data)
+        gamma (:gamma data)
         Q-SA (Q data S A)
         Q-S'A' (Q data S' A')]
-    (assoc-in data [:q-values S A] (+ Q-SA (* α (+ R (- (* γ Q-S'A') Q-SA)))))))
+    (assoc-in data [:q-values S A] (+ Q-SA (* alpha (+ R (- (* gamma Q-S'A') Q-SA)))))))
 
 (defn sarsa-1-eval [policy
                     action-f
@@ -465,17 +467,16 @@
 
 ;; ========= Learned path =========
 
-;; THIS IS PROBLEMATIC
-(defn simple-chain [policy action-f transition-f reward-f terminal?]
+(defn go-greedy [find-greedily trans-f reward-f terminal?]
   (fn [start data]
-    (loop [S start
-           chain (tuples/tuple)]
+    (loop [path (tuples/tuple)
+           S start]
       (if (terminal? S)
-        chain
-        (let [A (policy S (action-f S) data 0)
+        path
+        (let [A (-> data (get-in [:q-values S]) (find-greedily))
               R (reward-f S A)
-              S' (transition-f S A)]
-          (recur S' (conj chain (->Sample S A R))))))))
+              S' (trans-f S A)]
+          (recur (conj path (->Sample S A R)) S'))))))
 
 (defn random-traj [policy action-f transition-f reward-f terminal?]
   (fn [start data]
@@ -487,9 +488,7 @@
   (random-traj eps-balanced action-f transition-f reward-f terminal?))
 
 (defn derive-path
-  ([action-f transition-f reward-f terminal?]
-   (derive-path greedy-by-max action-f transition-f reward-f terminal?))
-  ([find-greedily action-f transition-f reward-f terminal?]
-   (simple-chain (greedy find-greedily) action-f transition-f reward-f terminal?))
-  ([channel find-greedily action-f transition-f reward-f terminal?]
-   (simple-chain (greedy channel find-greedily) action-f transition-f reward-f terminal?)))
+  ([transition-f reward-f terminal?]
+   (derive-path greedy-by-max transition-f reward-f terminal?))
+  ([find-greedily transition-f reward-f terminal?]
+   (go-greedy find-greedily transition-f reward-f terminal?)))

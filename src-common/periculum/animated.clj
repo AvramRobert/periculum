@@ -7,7 +7,9 @@
     [clojure.core.match :refer [match]]
     [play-clj.math :as gmath]
     [play-clj.g2d :refer [texture texture!]]
-    [periculum.dsl :as p]))
+    [periculum.dsl :as p]
+    [clj-tuple :as tuples]
+    [periculum.rl :as rl]))
 
 (def ^:const delta (/ 1 20))
 (def ^:const fpa 5)
@@ -82,17 +84,29 @@
     (->Pos (.x vec-2)
            (.y vec-2))))
 
+(defn when-recorded [entity f]
+  (if (:record? entity)
+    (f entity)
+    entity))
+
+(defn append-to-path [e]
+  (assoc e
+    :recorded-path (conj (:recorded-path e)
+                         (rl/->Pair (:state e) (:current-action e)))))
+
 (defn apply-inc [entity action-k]
   (let [f (:interpolator entity)
         t' (+ (:t entity) delta)
         pos' (apply-inter f t')]
     (if (>= (:t entity) 1.0)
-      (assoc entity
-        :state (assoc (:state entity) :position (norm-round pos')
-                                      :previous-action action-k)
-        :t 0.0
-        :completed? true
-        :current-action :stand)
+      (-> entity
+          (when-recorded append-to-path)
+          (assoc
+            :state (assoc (:state entity) :position (norm-round pos')
+                                          :previous-action action-k)
+            :t 0.0
+            :completed? true
+            :current-action :stand))
       (-> entity (assoc :t t'
                         :x (:x pos')
                         :y (:y pos')) (animate t')))))
@@ -150,10 +164,31 @@
    (on-player entities (fn [e]
                          (when-complete e #(select-action % action))))))
 
+(defn record-path [entities]
+  (println "RECORDING")
+  (on-player entities #(assoc %
+                        :record? true
+                        :recorded-path (tuples/tuple (rl/->Pair (:state %) (:current-action %))))))
+
+(defn stop-record-path [entities]
+  (println "STOPPED RECORDING")
+  (on-player entities #(assoc % :record? false)))
+
+(defn send-record! [channel]
+  (fn [entities]
+    (on-player entities
+               (fn [e]
+                 (when-let [path (:recorded-path e)]
+                   (do
+                     (async/go (async/>! channel path))
+                     (dissoc e :recorded-path)))
+                 e))))
+
 (defn player-entity [shape]
   (let [position (normalise (:x shape) (:y shape))]
     (assoc shape
       :id :player
+      :record? false
       :completed? true
       :state (->State position :stand)
       :current-action :stand

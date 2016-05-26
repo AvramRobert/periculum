@@ -94,9 +94,15 @@
            :on-key-down
            (fn [screen entities]
              (let [key (:key screen)
-                   do-act (comp apply-action supply-action)]
+                   send! (send-record! periculum.dsl/expect-channel)
+                   do-act (comp apply-action supply-action)
+                   do-send (comp send! stop-record-path)]
                (cond
-                 (= key (key-code :s))
+                 (= key (key-code :minus))
+                 (do-send entities)
+                 (= key (key-code :plus))
+                 (record-path entities)
+                 (= key (key-code :dpad-down))
                  (do-act entities :stand)
                  (= key (key-code :dpad-up))
                  (do-act entities :jump-up)
@@ -144,9 +150,15 @@
            :on-key-down
            (fn [screen entities]
              (let [key (:key screen)
-                   do-act (comp apply-action supply-action)]
+                   send! (send-record! periculum.dsl/expect-channel)
+                   do-act (comp apply-action supply-action)
+                   do-send (comp send! stop-record-path)]
                (cond
-                 (= key (key-code :s))
+                 (= key (key-code :minus))
+                 (do-send entities)
+                 (= key (key-code :plus))
+                 (record-path entities)
+                 (= key (key-code :dpad-down))
                  (do-act entities :stand)
                  (= key (key-code :dpad-up))
                  (do-act entities :jump-up)
