@@ -14,10 +14,15 @@
 (defrecord Pair [state action])
 (defrecord Sample [state action reward])
 
-(defn conf [gamma alpha lambda]
-  (assoc empty-data :gamma gamma
-                    :alpha alpha
-                    :lambda lambda))
+(defn conf
+  ([gamma]
+   (conf gamma 0.0))
+  ([gamma alpha]
+   (conf gamma alpha 0.0))
+  ([gamma alpha lambda]
+   (assoc empty-data :gamma gamma
+                     :alpha alpha
+                     :lambda lambda)))
 
 (defn- close-all! [& channels]
   (if (empty? channels)
@@ -59,17 +64,22 @@
         (apply close-all! channels)))))
 
 (defn control->
+  ([algorithm config]
+   (control algorithm config))
   ([algorithm config channel]
    (control-> algorithm config channel #(zero? (mod % 1))))
   ([algorithm config channel p]
    (fn [start eps]
-     (reduce (fn [data episode]
-               (when (p episode)
-                 (println episode)
-                 (async/>!! channel {:episode episode
-                                     :data    data}))
-               (algorithm start data episode)) config (range 1 eps))
-     (async/close! channel))))
+     (async/thread
+       (let [res (reduce (fn [data episode]
+                           (when (zero? (mod episode 100))
+                             (println episode))
+                           (when (p episode)
+                             (async/go (async/>! channel {:episode episode
+                                                          :data    data})))
+                           (algorithm start data episode)) config (range 1 eps))]
+         (async/close! channel)
+         res)))))
 
 ;; ========= Utils =========
 (defn action-mean [As]
@@ -178,9 +188,9 @@
             A-greedy (find-opt (get Qs S))
             rest (filter #(not (= A-greedy %)) As)]
         (if (> (rand) P-greedy)
-          (pick-rnd rest)
+          (rand-nth rest)
           A-greedy))
-      (pick-rnd As))))
+      (rand-nth As))))
 
 (defn ε-greedy
   ([ε]
@@ -214,7 +224,7 @@
 
 (defn ε-balanced
   ([S As data eps-count]
-   (pick-rnd As))
+   (rand-nth As))
   ([channel]
    (bootstrap-policy channel ε-balanced)))
 
@@ -231,7 +241,7 @@
    (fn [S As data _]
      (if-let [known-As (get-in data [:q-values S])]
        (find-greedily known-As)
-       (pick-rnd As))))
+       (rand-nth As))))
   ([channel
     find-greedily]
    (let [policy (greedy find-greedily)]
@@ -467,6 +477,10 @@
 
 ;; ========= Learned path =========
 
+;; FIXME: There isn't always a greedy path to follow.
+;; The occurrence probability of this is inversely proportional to the number of episodes.
+;; This should actually be some sort of greedy search, or it should at least avoid the pitfall
+;; of circulating around the same state or number of states
 (defn go-greedy [find-greedily trans-f reward-f terminal?]
   (fn [start data]
     (loop [path (tuples/tuple)

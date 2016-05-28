@@ -45,11 +45,10 @@
 (defn capture [channel f]
   (loop [gathered (tuples/tuple)]
     (if-let [data (async/<!! channel)]
-      (let [res (f data)]
-        (recur (conj gathered res)))
+      (recur (conj gathered data))
       (do
         (println "Done")
-        gathered))))
+        (map f gathered)))))
 
 (defn monitor [channel f & gs]
   (async/thread
@@ -147,11 +146,12 @@
        :y       (map :reward chain)}) data))
 
 (defn- act|eps [data]
-  (map
-    (fn [{episode :episode
-          chain   :markov-chain}]
-      {:x episode
-       :y (count chain)}) data))
+  (let [z (map
+            (fn [{episode :episode
+                  chain   :markov-chain}]
+              {:x episode
+               :y (count chain)}) data)]
+    z))
 
 (defn- mse|eps [expectation-chain data]
   (map

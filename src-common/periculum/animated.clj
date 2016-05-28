@@ -7,7 +7,7 @@
     [clojure.core.match :refer [match]]
     [play-clj.math :as gmath]
     [play-clj.g2d :refer [texture texture!]]
-    [periculum.dsl :as p]
+    [periculum.dsl :as dsl]
     [clj-tuple :as tuples]
     [periculum.rl :as rl]))
 
@@ -66,7 +66,7 @@
    (norm-round (:x position) (:y position))))
 
 (defn path [state action]
-  (let [Ω (omega p/world primitive-actions)
+  (let [Ω (omega dsl/world primitive-actions)
         [_ p] (Ω state action)]
     p))
 
@@ -155,7 +155,7 @@
 
 (defn attempt-next [entity]
   (let [f (or-else #(select-action entity (:action %)) entity)]
-    (f (async/poll! p/result-channel))))
+    (f (async/poll! dsl/result-channel))))
 
 (defn supply-action
   ([entities]
@@ -209,7 +209,7 @@
         e)) entities))
 
 (defn show-choice [entities]
-  (if-let [updated (p/choice-observer #(move-agent entities %))]
+  (if-let [updated (dsl/choice-observer #(move-agent entities %))]
     updated
     entities))
 

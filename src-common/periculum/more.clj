@@ -48,12 +48,6 @@
       (recur (conj acc h) tail)
       (conj acc h))))
 
-(defn pick-rnd [coll]
-  (let [th (rand-int (count coll))]
-    (if (vector? coll)
-      (nth coll th)
-      (nth (vec coll) th))))
-
 (defn apply-n [n f init]
   (loop [value init
          cur n]
