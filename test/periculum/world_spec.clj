@@ -38,8 +38,8 @@
              :platforms [(m-struct 3 (pos 4 5))]})
 
 (deftest world-creation
-  (let [world (make-world config)
-        exp-world (flatten (solidify-many exp-world-lattice))
+  (let [world (map #(dissoc % :type) (make-world config))
+        exp-world (map #(dissoc % :type) (flatten (solidify-many exp-world-lattice)))
         res (every?
               (fn [itm]
                 (some #(= itm %) exp-world)) world)]

@@ -149,7 +149,6 @@
         [t-wr-desc path-dwr] (fall start2 lookup [:walk-right]) ; fall walking right
         expected-dwr [(pos 6 4) (pos 7 3) (pos 7 2) (pos 8 1)]
         [t-rr-desc path-drr] (fall start2 lookup [:run-right]) ; fall running right
-        _ (println path-drr)
         expected-drr [(pos 6 4) (pos 7 3) (pos 8 2) (pos 9 1)]
         start3 (pos 1 4)
         [t-rl-desc path-drl] (fall start3 lookup [:run-left])

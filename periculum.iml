@@ -19,7 +19,7 @@
     <orderEntry type="library" name="Leiningen: clatrix:0.3.0" level="project" />
     <orderEntry type="library" name="Leiningen: clj-time:0.6.0" level="project" />
     <orderEntry type="library" name="Leiningen: clj-tuple:0.2.2" level="project" />
-    <orderEntry type="library" name="Leiningen: clojure-complete:0.2.4" level="project" />
+    <orderEntry type="library" name="Leiningen: clojure-complete:0.2.3" level="project" />
     <orderEntry type="library" name="Leiningen: clojureql:1.0.4" level="project" />
     <orderEntry type="library" name="Leiningen: com.badlogicgames.gdx/gdx-backend-lwjgl:1.8.0" level="project" />
     <orderEntry type="library" name="Leiningen: com.badlogicgames.gdx/gdx-box2d-platform:1.8.0:natives-desktop" level="project" />
@@ -101,7 +101,7 @@
     <orderEntry type="library" name="Leiningen: org.clojure/test.check:0.9.0" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/tools.analyzer.jvm:0.6.5" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/tools.analyzer:0.6.4" level="project" />
-    <orderEntry type="library" name="Leiningen: org.clojure/tools.nrepl:0.2.12" level="project" />
+    <orderEntry type="library" name="Leiningen: org.clojure/tools.nrepl:0.2.6" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/tools.reader:0.8.12" level="project" />
     <orderEntry type="library" name="Leiningen: org.danlarkin/clojure-json:1.1" level="project" />
     <orderEntry type="library" name="Leiningen: org.imgscalr/imgscalr-lib:4.2" level="project" />

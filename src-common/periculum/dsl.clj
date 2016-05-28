@@ -12,7 +12,7 @@
 
 (def ^:const local-path "/home/robert/Repositories/periculum/resources/")
 
-(def policy-channel (async/chan 2048))
+(def policy-channel (async/chan))
 (def result-channel (async/chan))
 (def expect-channel (async/chan))
 
@@ -42,10 +42,10 @@
   (fn [path]
     (map #(->Sample (:state %) (:action %) (reward-f (:state %) (:action %))) path)))
 
-(defn val-of [kvs k]
+(defn- val-of [kvs k]
   (->> kvs (drop-while #(not= % k)) second))
 
-(defn exp-primitives [kvs]
+(defn- exp-primitives [kvs]
   (let [w (val-of kvs :world)
         policy (val-of kvs :policy)
         t? (terminal? w)
@@ -58,7 +58,7 @@
      :transition t
      :terminal   t?}))
 
-(defn exp-algorithm [kvs]
+(defn- exp-algorithm [kvs]
   (let [prims (exp-primitives kvs)
         algo (val-of kvs :algorithm)]
     (algo (:policy prims)
@@ -67,13 +67,13 @@
           (:transition prims)
           (:terminal prims))))
 
-(defn exp-data [kvs]
+(defn- exp-data [kvs]
   (let [gamma (val-of kvs :gamma)
         alpha (val-of kvs :alpha)
         lambda (val-of kvs :lambda)]
     (apply conf (filter #(not (nil? %)) (tuples/tuple gamma alpha lambda)))))
 
-(defn exp-start [kvs]
+(defn- exp-start [kvs]
   (-> kvs
       (val-of :start)
       ((or-else
@@ -81,36 +81,35 @@
            (state (first s) (second s) :stand))
          (state 1 1 :stand)))))
 
-(defn exp-plotf [prims kvs]
+(defn- exp-plotf [prims kvs]
   (let [plot (val-of kvs :plot)
-        title ((or-else identity "") (val-of kvs :title))]
+        title ((or-else identity "") (:title plot))
+        greedily (capture-greedy (exp-start kvs)
+                                 (:transition prims)
+                                 (:reward prims)
+                                 (:terminal prims))]
     (case (:method plot)
-      :reward/episode (reward-per-episode title)
-      :reward/action (reward-per-action title)
-      :steps/episode (steps-per-episode title)
-      :mse/episode (fn [data]
-                     (let [with-rew (make-sample (:reward prims))
-                           expectation (async/<!! expect-channel)
-                           pf (mse-per-epsiode (with-rew expectation) title)]
-                       (pf data)))
-      "No")))
+      :reward/episode [greedily (reward-per-episode title)]
+      :reward/action [greedily (reward-per-action title)]
+      :steps/episode [greedily (steps-per-episode title)]
+      :mse/episode [greedily
+                    (fn [data]
+                      (let [with-rew (make-sample (:reward prims))
+                            expectation (async/<!! expect-channel)
+                            pf (mse-per-epsiode (with-rew expectation) title)]
+                        (pf data)))]
+      "Should not occur")))
 
-
-
-(defn exp-plot [start kvs]
+(defn- exp-plot [kvs]
   (let [prims (exp-primitives kvs)
-        c (capture-greedy start
-                          (:transition prims)
-                          (:reward prims)
-                          (:terminal prims))
-        plot (exp-plotf prims kvs)]
+        [f plot] (exp-plotf prims kvs)]
     (fn [channel]
-      (monitor channel c plot))))
+      (monitor channel f plot))))
 
-(defn plotted? [kvs]
+(defn- plotted? [kvs]
   (some? (val-of kvs :plot)))
 
-(defn exp-schedule [kvs]
+(defn- exp-schedule [kvs]
   (-> kvs
       (val-of :plot)
       (:schedule)))
@@ -137,7 +136,7 @@
     (if (plotted? kvs)
       (let [schedule (exp-schedule kvs)
             pre-run! (fn [channel] (control-> algorithm data channel schedule))
-            monitor! (exp-plot start kvs)]
+            monitor! (exp-plot kvs)]
         (fn []
           (let [chan (async/chan 4096)
                 res ((pre-run! chan) start eps)

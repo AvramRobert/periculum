@@ -36,10 +36,27 @@
     (let [rem (drop-while #(not (= % elm)) coll)]
       (f elm rem))))
 
-(defn map-assoc [f m]
+(defn map-vals [f map]
   (reduce
     (fn [nmap [k v]]
-      (assoc nmap k (f k v))) {} m))
+      (assoc nmap k (f k v))) {} map))
+
+(defn map-keys [f map]
+  (reduce
+    (fn [nmap [k v]]
+      (assoc nmap (f k) v)) {} map))
+
+(defn map-both [kf vf map]
+  (reduce
+    (fn [nmap [k v]]
+      (assoc nmap (kf k) (vf v))) {} map))
+
+(defn filter-kv [pred map]
+  (reduce
+    (fn [nmap [k v]]
+      (if (pred k v)
+        (assoc nmap k v)
+        nmap)) {} map))
 
 (defn take-while+ [pred coll]
   (loop [acc (tuples/tuple)

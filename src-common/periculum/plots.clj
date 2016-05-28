@@ -45,7 +45,8 @@
 (defn capture [channel f]
   (loop [gathered (tuples/tuple)]
     (if-let [data (async/<!! channel)]
-      (recur (conj gathered data))
+      (do
+        (recur (conj gathered data)))
       (do
         (println "Done")
         (map f gathered)))))
@@ -159,9 +160,7 @@
           chain   :markov-chain}]
       (let [largest (->> [expectation-chain chain] (max-by count) count)
             predicted (->> chain (map :reward) (pad-left-to largest))
-            expected (->> expectation-chain (map :reward) (pad-left-to largest))
-            _ (println predicted)
-            _ (println expected)]
+            expected (->> expectation-chain (map :reward) (pad-left-to largest))]
         {:x episode
          :y (rmse predicted expected)}))
     data))
@@ -225,4 +224,3 @@
           (merged-lines! title
                          "Episodes"
                          "Mean squared error")))))
-

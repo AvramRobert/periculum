@@ -264,7 +264,7 @@
                         terminal?]
   (fn [start data eps-count]
     (let [chain-from (lazy-traj policy action-f reward-f transition-f)
-          markov-chain (take-while #(not (terminal? (:state %))) (chain-from start data eps-count))
+          markov-chain (take-while+ #(not (terminal? (:state %))) (chain-from start data eps-count))
           Gt-R (Gt markov-chain (:gamma data))
           data-counted (every-visit-inc data markov-chain)]
       (tuples/tuple start (reduce monte-carlo-update data-counted Gt-R)))))
@@ -350,7 +350,7 @@
 
 (defn Q-sarsa-λ [data S As δ]
   (let [α (:alpha data)]
-    (map-assoc
+    (map-vals
       (fn [A R]
         (let [E (C data S A)]
           (+ R (* α δ E)))) As)))
@@ -359,7 +359,7 @@
   (let [γ (:gamma data)
         λ (:lambda data)
         As (get-in data [:counts S])]
-    (map-assoc
+    (map-vals
       (fn [_ C]
         (* γ λ C)) As)))
 
@@ -477,29 +477,52 @@
 
 ;; ========= Learned path =========
 
-;; FIXME: There isn't always a greedy path to follow.
+;; There isn't `always` a greedy path to follow.
 ;; The occurrence probability of this is inversely proportional to the number of episodes.
-;; This should actually be some sort of greedy search, or it should at least avoid the pitfall
-;; of circulating around the same state or number of states
+;; To avoid the initial pitfall of circulating between states that greedily reference each other,
+;; we start to exclude the actions that lead to them the moment we encounter a cycle.
+
+(defn cycled? [path S]
+  (some #(= (:state %) S) path))
+
+(defn go-back [find-greedily data path excluded]
+  (let [culprit (last path)
+        As (get-in data [:q-values (:state culprit)])
+        visited (get excluded (:state culprit))
+        filtered (filter-kv
+                   (fn [A _]
+                     (not (some #(= % A) visited))) As)]
+    (if (not (empty? filtered))
+      (let [A (find-greedily filtered)]
+        [(drop-last path)
+         (update excluded (:state culprit) #(conj % A))
+         (->Pair (:state culprit) A)])
+      (go-back find-greedily
+               data
+               (drop-last path)
+               (update excluded (:state culprit) #(conj % (:action culprit)))))))
+
 (defn go-greedy [find-greedily trans-f reward-f terminal?]
   (fn [start data]
-    (loop [path (tuples/tuple)
+    (loop [excluded {}
+           path (tuples/tuple)
            S start]
-      (if (terminal? S)
+      (cond
+        (terminal? S)
         path
-        (let [A (-> data (get-in [:q-values S]) (find-greedily))
-              R (reward-f S A)
-              S' (trans-f S A)]
-          (recur (conj path (->Sample S A R)) S'))))))
-
-(defn random-traj [policy action-f transition-f reward-f terminal?]
-  (fn [start data]
-    (let [traj (lazy-traj policy action-f reward-f transition-f)]
-      (take-while #(not (terminal? (:state %))) (traj start data 0)))))
-
-
-(defn random-path [action-f transition-f reward-f terminal?]
-  (random-traj eps-balanced action-f transition-f reward-f terminal?))
+        (cycled? path S)
+        (let [[rem-path n-excluded pair] (go-back find-greedily data path excluded)
+              R (reward-f (:state pair) (:action pair))
+              S' (trans-f (:state pair) (:action pair))]
+          (recur n-excluded
+                 (conj rem-path (->Sample (:state pair) (:action pair) R))
+                 S'))
+        :else (let [A (-> data (get-in [:q-values S]) (find-greedily))
+                    R (reward-f S A)
+                    S' (trans-f S A)]
+                (recur (update excluded S #(conj % A))
+                       (conj path (->Sample S A R))
+                       S'))))))
 
 (defn derive-path
   ([transition-f reward-f terminal?]

@@ -111,7 +111,6 @@
          holes-conf     :holes
          walls-conf     :walls
          platforms-conf :platforms
-         ;other-conf :other
          } config
         floor ((make-platform (:length floor-conf) holes-conf) (:start-pos floor-conf))
         walls (map #((make-solid (:length %) (:height %)) (:start-pos %)) walls-conf)
