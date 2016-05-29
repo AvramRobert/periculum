@@ -105,3 +105,8 @@
 
 (defn rmse [predicted expected]
   (Math/sqrt (mse predicted expected)))
+
+(defn group-consec [f coll]
+  (map #(map last %)
+       (partition-by (fn [x]
+                       (- (first x) (f (second x)))) (map-indexed vector coll))))

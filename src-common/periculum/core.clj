@@ -1,6 +1,7 @@
 (ns periculum.core
   (:use [periculum.play]
-        [periculum.animated])
+        [periculum.animated]
+        [periculum.more])
   (:require [play-clj.core :refer :all]
             [play-clj.ui :refer :all]
             [play-clj.g2d :refer :all]
@@ -8,19 +9,73 @@
             [periculum.world :refer [world-from-pixmap]]
             [clojure.core.match :refer [match]]))
 
+(defn assoc-from [entity txture]
+  (let [pos (block-pos (:position entity))]
+    (assoc txture
+      :x (:x pos)
+      :y (:y pos)
+      :width block-size
+      :height block-size)))
+
+(defn p-ext [f entities]
+  (filter (fn [e]
+            (not (some
+                   #(and (f % e)
+                         (= (-> % :position :y) (-> e :position :y))) entities))) entities))
+
+(defn dist-floor [left-texture
+                  right-texture
+                  rest-texture
+                  entities]
+  (let [lefts (p-ext #(= (-> %1 :position :x) (- (-> %2 :position :x) 1)) entities)
+        rights (p-ext #(= (-> %1 :position :x) (+ 1 (-> %2 :position :x))) entities)
+        rests (clojure.set/difference (set entities) (set lefts) (set rights))]
+    (flatten
+      [(map #(assoc-from % left-texture) lefts)
+       (map #(assoc-from % right-texture) rights)
+       (map #(assoc-from % rest-texture) rests)])))
+
 (defn wall-shape [entity]
   (let [pos (to-render-pos entity)]
     (assoc (shape :filled
                   :set-color (color :coral)
                   :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
-(defn wall-texture [entity]
-  (let [pos (to-render-pos entity)]
-    (assoc (texture "cobblestone.png")
-      :x (:x pos)
-      :y (:y pos)
-      :width block-size
-      :height block-size)))
+(defn dist-wall [t-left-texture
+                 t-right-texture
+                 b-left-texture
+                 b-right-texture
+                 r-left-texture
+                 r-right-texture
+                 rest-texture
+                 entities]
+  (let [top (max-by #(-> % :position :y) entities)
+        bottom (min-by #(-> % :position :x) entities)
+        lefts (->> entities
+                   (filter #(= (-> % :position :y) (-> top :position :y)))
+                   (dist-floor t-left-texture t-right-texture rest-texture))
+        rights (->> entities
+                    (filter #(= (-> % :position :y) (-> bottom :position :y)))
+                    (dist-floor b-left-texture b-right-texture rest-texture))
+        rests (->> entities
+                   (filter
+                     #(and
+                       (not= (-> % :position :y) (-> top :position :y))
+                       (not= (-> % :position :y) (-> bottom :position :y))))
+                   (dist-floor r-left-texture r-right-texture rest-texture))]
+    (flatten
+      [lefts rights rests])))
+
+(defn wall-texture [tiles entities]
+  (dist-wall
+    (texture (aget tiles 2 8))                              ;;top left corner
+    (texture (aget tiles 2 10))                             ;;top right corner
+    (texture (aget tiles 2 8))                              ;;bottom left corner
+    (texture (aget tiles 2 10))                             ;;bottom right corner
+    (texture (aget tiles 2 8))                              ;;inner left corner
+    (texture (aget tiles 2 10))                             ;;inner right corner
+    (texture (aget tiles 2 9))                              ;;inner
+    entities))
 
 (defn floor-shape [entity]
   (let [pos (to-render-pos entity)]
@@ -28,13 +83,12 @@
                   :set-color (color :gray)
                   :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
-(defn floor-texture [entity]
-  (let [pos (to-render-pos entity)]
-    (assoc (texture "grass_side.png")
-      :x (:x pos)
-      :y (:y pos)
-      :width block-size
-      :height block-size)))
+(defn floor-texture [tiles entities]
+  (dist-floor
+    (texture (aget tiles 1 0))                              ;;left corner
+    (texture (aget tiles 1 2))                              ;;right corner
+    (texture (aget tiles 1 1))                              ;;inner
+    entities))
 
 (defn agent-shape [x y]
   (let [pos (block-pos x y)]
@@ -129,16 +183,21 @@
              (update! screen :renderer (stage) :camera (orthographic))
              (let [animation-sheet (texture "sheet.png")
                    player-anim (agent-texture animation-sheet)
+                   environment-sheet (texture "env-tiles1.png")
+
+                   env-tiles (texture! environment-sheet :split half-block half-block)
                    landscape (assoc (texture "wall1.jpg")
                                :id :background
                                :width (:width screen)
                                :height (:height screen))
                    walls (->> world
                               (filter #(= (:type %) :wall))
-                              (map wall-texture))
+                              (wall-texture env-tiles)
+                              (flatten))
                    floors (->> world
                                (filter #(= (:type %) :floor))
-                               (map floor-texture))
+                               (floor-texture env-tiles)
+                               (flatten))
                    player (player-anim 1 1)]
                (flatten [[landscape]
                          (map #(assoc % :wall? true) walls)
