@@ -1,5 +1,5 @@
 (ns periculum.core
-  (:use [periculum.dsl]
+  (:use [periculum.play]
         [periculum.animated])
   (:require [play-clj.core :refer :all]
             [play-clj.ui :refer :all]
@@ -94,7 +94,7 @@
            :on-key-down
            (fn [screen entities]
              (let [key (:key screen)
-                   send! (send-record! periculum.dsl/expect-channel)
+                   send! (send-record! periculum.play/expect-channel)
                    do-act (comp apply-action supply-action)
                    do-send (comp send! stop-record-path)]
                (cond
@@ -150,7 +150,7 @@
            :on-key-down
            (fn [screen entities]
              (let [key (:key screen)
-                   send! (send-record! periculum.dsl/expect-channel)
+                   send! (send-record! periculum.play/expect-channel)
                    do-act (comp apply-action supply-action)
                    do-send (comp send! stop-record-path)]
                (cond

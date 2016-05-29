@@ -105,7 +105,6 @@
          (img->entities)
          (filter #(not= % :none)))))
 
-; FIXME: Write macro for world creation
 (defn make-world [config]
   (let [{floor-conf     :floor
          holes-conf     :holes

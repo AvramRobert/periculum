@@ -7,7 +7,7 @@
     [clojure.core.match :refer [match]]
     [play-clj.math :as gmath]
     [play-clj.g2d :refer [texture texture!]]
-    [periculum.dsl :as dsl]
+    [periculum.play :as play]
     [clj-tuple :as tuples]
     [periculum.rl :as rl]))
 
@@ -66,7 +66,7 @@
    (norm-round (:x position) (:y position))))
 
 (defn path [state action]
-  (let [Ω (omega dsl/world primitive-actions)
+  (let [Ω (omega play/world primitive-actions)
         [_ p] (Ω state action)]
     p))
 
@@ -155,7 +155,7 @@
 
 (defn attempt-next [entity]
   (let [f (or-else #(select-action entity (:action %)) entity)]
-    (f (async/poll! dsl/result-channel))))
+    (f (async/poll! play/result-channel))))
 
 (defn supply-action
   ([entities]
@@ -193,25 +193,6 @@
       :state (->State position :stand)
       :current-action :stand
       :t 0.0)))
-
-;; Minimalistic agent transition display without animation
-
-(defn do-trans! [entity pair]
-  (let [pos (block-pos (->> pair (:state) (:position)))]
-    (-> entity (assoc :x (+ (:x pos) block-size)
-                      :y (+ (:y pos) block-size)))))
-
-(defn move-agent [entities pair]
-  (map
-    (fn [e]
-      (if-let [_ (:player? e)]
-        (do-trans! e pair)
-        e)) entities))
-
-(defn show-choice [entities]
-  (if-let [updated (dsl/choice-observer #(move-agent entities %))]
-    updated
-    entities))
 
 
 

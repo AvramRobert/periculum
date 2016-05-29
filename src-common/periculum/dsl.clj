@@ -10,39 +10,11 @@
     [play-clj.core :refer [shape, color, color!]]
     [clj-tuple :as tuples]))
 
-(def ^:const local-path "/home/robert/Repositories/periculum/resources/")
-
-(def policy-channel (async/chan))
-(def result-channel (async/chan))
-(def expect-channel (async/chan))
-
-(defn state [x y action]
-  (->State (->Pos x y) action))
-
-(def world-config1 {:floor     (m-struct 16 0 (pos 0 0))
-                    :holes     [(pos 3 0) (pos 4 0) (pos 9 0) (pos 10 0)]
-                    :walls     [(m-struct 2 3 (pos 7 1))]
-                    :platforms [(m-struct 2 (pos 10 5))]})
-
-(def world-config2 {:floor     (m-struct 14 0 (pos 0 0))
-                    :holes     [(pos 3 0) (pos 13 0) (pos 14 0) (pos 15 0)]
-                    :walls     [(m-struct 2 3 (pos 6 1)) (m-struct 2 3 (pos 10 1))]
-                    :platforms empty-vec
-                    })
-
-(def world (make-world world-config1))
-;(def world (world-from-pixmap (str local-path "level1.png")))
-
-(defn observe! [channel]
-  (delayed-observer channel))
-
-(def choice-observer (observe! policy-channel))
-
 (defn make-sample [reward-f]
   (fn [path]
     (map #(->Sample (:state %) (:action %) (reward-f (:state %) (:action %))) path)))
 
-(defn- val-of [kvs k]
+(defn val-of [kvs k]
   (->> kvs (drop-while #(not= % k)) second))
 
 (defn- exp-start [kvs]
@@ -117,12 +89,15 @@
       :reward/action [greedily (reward-per-action title)]
       :steps/episode [greedily (steps-per-episode title)]
       :value/state [identity (value-per-state title)]
-      :mse/episode [greedily
-                    (fn [data]
-                      (let [with-rew (make-sample (:reward prims))
-                            expectation (async/<!! expect-channel)
-                            pf (mse-per-epsiode (with-rew expectation) title)]
-                        (pf data)))]
+      :mse/episode (do
+                     (assert (:expect plot) "Please specify an expectation channel")
+                     [greedily
+                      (fn [data]
+                        (let [expect-channel (:expect plot)
+                              with-rew (make-sample (:reward prims))
+                              expectation (async/<!! expect-channel)
+                              pf (mse-per-epsiode (with-rew expectation) title)]
+                          (pf data)))])
       (println "Unknown method"))))
 
 (defn- plotted? [kvs]
@@ -135,13 +110,14 @@
   (fn [channel]
     (if (echoed? kvs)
       (let [prims (exp-primitives kvs)
+            echo-channel (val-of kvs :echo)
             start (:start prims)
             path (compute-path (:transition prims)
                                (:reward prims)
                                (:terminal prims))
             propagate (fn [p]
                         (foreach
-                          #(async/go (async/>! result-channel %)) p)
+                          #(async/go (async/>! echo-channel %)) p)
                         channel)]
         (->> channel
              (async/<!!)
@@ -177,10 +153,12 @@
     :lambda => number
     :algorithm => function
     :episodes => number
-    :plot { :title => string
-            :schedule => predicate
-            :method => keyword
-           }
+    :plots [{:title => string
+             :schedule => predicate
+             :method => keyword
+            }
+           ...
+            ]
 
    This DSL can be applied to any MDP, that utilises my RL API.
    Note: if no other separate primitives are provided,
@@ -243,22 +221,3 @@
       (let [channel (learning)
             qs (async/<!! channel)]
         (recurse qs)))))
-
-(defn- -local-prims [kvs]
-  (let [w (val-of kvs :world)
-        t? (terminal? w)
-        add [actions :action
-             (terminal? w) :terminal
-             (reward w t?) :reward
-             (transition w t?) :transition
-             t? :terminal]
-        args ((or-else
-                (fn [_]
-                  add) (conj add (state 1 1 :stand) :start)) (val-of kvs :start))]
-    (into kvs args)))
-
-(defn -learn [& kvs]
-  (apply deflearn (-local-prims kvs)))
-
-(defn -learn-cont [& kvs]
-  (apply deflearn-cont (-local-prims kvs)))

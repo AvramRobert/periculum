@@ -142,6 +142,8 @@
          :y (rmse predicted expected)}))
     data))
 
+;; BIASED TOWARDS MY MDP
+;; It should actually directly use the state representation, instead of the transformation
 (defn- value|state [data]
   (map
     (fn [{episode       :episode
