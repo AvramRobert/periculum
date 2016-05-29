@@ -46,11 +46,7 @@
   (->> kvs (drop-while #(not= % k)) second))
 
 (defn- exp-start [kvs]
-  (-> kvs
-      (val-of :start)
-      ((or-else
-         identity
-         (state 1 1 :stand)))))
+  (val-of kvs :start))
 
 (defn- with-mdp? [kvs]
   (every?
@@ -69,8 +65,8 @@
                    terminal]
   (let [start (exp-start kvs)
         policy (val-of kvs :policy)]
-    (assert world "Please specify a world")
     (assert policy "Please specify a policy")
+    (assert start "Please specify a starting state")
     {:start      start
      :policy     policy
      :action     action
@@ -80,18 +76,12 @@
      }))
 
 (defn- exp-primitives [kvs]
-  (if (with-mdp? kvs)
-    (primitives kvs
-                (val-of kvs :action)
-                (val-of kvs :reward)
-                (val-of kvs :transition)
-                (val-of kvs :terminal))
-    (let [w (val-of kvs :world)
-          a actions
-          t? (terminal? w)
-          r (reward w t?)
-          t (transition w t?)]
-      (primitives kvs a r t t?))))
+  (assert (with-mdp? kvs) "Please provide the necessary primitives for your MDP")
+  (primitives kvs
+              (val-of kvs :action)
+              (val-of kvs :reward)
+              (val-of kvs :transition)
+              (val-of kvs :terminal)))
 
 (defn- exp-algorithm [kvs]
   (let [prims (exp-primitives kvs)
@@ -178,7 +168,7 @@
       (exp-plots kvs)))
 
 (defn deflearn [& kvs]
-  "Small DSL for working with the algorithm
+  "Small DSL for working with the RL and plotting APIs
    Parameters:
     :world => vector records
     :policy => function
@@ -191,6 +181,10 @@
             :schedule => predicate
             :method => keyword
            }
+
+   This DSL can be applied to any MDP, that utilises my RL API.
+   Note: if no other separate primitives are provided,
+   this defaults to my own MDP
   "
   (let [data (exp-data kvs)
         eps (val-of kvs :episodes)
@@ -249,3 +243,22 @@
       (let [channel (learning)
             qs (async/<!! channel)]
         (recurse qs)))))
+
+(defn- -local-prims [kvs]
+  (let [w (val-of kvs :world)
+        t? (terminal? w)
+        add [actions :action
+             (terminal? w) :terminal
+             (reward w t?) :reward
+             (transition w t?) :transition
+             t? :terminal]
+        args ((or-else
+                (fn [_]
+                  add) (conj add (state 1 1 :stand) :start)) (val-of kvs :start))]
+    (into kvs args)))
+
+(defn -learn [& kvs]
+  (apply deflearn (-local-prims kvs)))
+
+(defn -learn-cont [& kvs]
+  (apply deflearn-cont (-local-prims kvs)))
