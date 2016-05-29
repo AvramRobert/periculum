@@ -9,19 +9,6 @@
             [periculum.rl :as rl]
             [clj-tuple :as tuples]))
 
-(defn action-index [action]
-  (case action
-    :stand 0
-    :walk-left 1
-    :walk-right 2
-    :run-left 3
-    :run-right 4
-    :jump-up 5
-    :jump-left 6
-    :jump-right 7
-    :run-jump-left 8
-    :run-jump-right 9))
-
 (defn- apply-options [plot options]
   (loop [o-plot plot
          opts options]
@@ -61,7 +48,7 @@
           all))))
 
 (defn capture-greedy [start transition-f reward-f terminal?]
-  (let [get-greedy (rl/derive-path transition-f reward-f terminal?)]
+  (let [get-greedy (rl/compute-path transition-f reward-f terminal?)]
     (fn [data]
       {:episode      (:episode data)
        :markov-chain (get-greedy start (:data data))
@@ -120,22 +107,10 @@
             (set-opt episode)
             view)) data)))
 
-(defn- multiple-bars!
-  [title x-label y-label data]
-  (foreach
-    (fn [{episode :episode
-          x-data  :x
-          y-data  :y}]
-      (view (bar-chart
-              x-data y-data
-              :x-label x-label
-              :y-label y-label
-              :title (str title " :: Episode " episode)))) data))
-
 (defn- rew|eps [data]
   (map (fn [{episode :episode
              chain   :markov-chain}]
-         (let [total (reduce #(+ %1 (:reward %2)) 0.0 chain)]
+         (let [total (rl/total-reward chain)]
            {:x episode :y total})) data))
 
 (defn- rew|act [data]
@@ -143,7 +118,9 @@
     (fn [{episode :episode
           chain   :markov-chain}]
       {:episode episode
-       :x       (map :action chain)
+       :x       (map-indexed
+                  (fn [idx p]
+                    (-> p :action (name) (str "-" idx) (keyword))) chain)
        :y       (map :reward chain)}) data))
 
 (defn- act|eps [data]
@@ -164,6 +141,26 @@
         {:x episode
          :y (rmse predicted expected)}))
     data))
+
+(defn- value|state [data]
+  (map
+    (fn [{episode       :episode
+          learning-data :data}]
+      (letfn [(divide [values]
+                {:episode episode
+                 :x       (keys values)
+                 :y       (vals values)})]
+        (->>
+          learning-data
+          :q-values
+          (map-both (fn [k]
+                      (str (-> k :position :x)
+                           ":"
+                           (-> k :position :y)
+                           "-"
+                           (:previous-action k)))
+                    rl/action-mean)
+          divide))) data))
 
 (defn reward-per-episode
   ([]
@@ -201,19 +198,6 @@
             "Episodes"
             "Steps")))))
 
-(defn scattered-rewards-per-action
-  ([]
-   (scattered-rewards-per-action ""))
-  ([title]
-   (fn [data]
-     (->> data
-          (rew|act)
-          (map (fn [d]
-                 (update d :x #(map action-index %))))
-          (scatter-out! title
-                        "Actions"
-                        "Rewards")))))
-
 (defn mse-per-epsiode
   ([expectation-chain]
    (mse-per-epsiode expectation-chain ""))
@@ -223,4 +207,15 @@
           (mse|eps expectation-chain)
           (merged-lines! title
                          "Episodes"
-                         "Mean squared error")))))
+                         "MSE")))))
+
+(defn value-per-state
+  ([]
+   (value-per-state ""))
+  ([title]
+   (fn [data]
+     (->> data
+          (value|state)
+          (multiple-charts! title
+                            "States"
+                            "Values")))))

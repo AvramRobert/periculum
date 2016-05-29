@@ -24,7 +24,7 @@
                      :alpha alpha
                      :lambda lambda)))
 
-(defn- close-all! [& channels]
+(defn- close-all! [channels]
   (if (empty? channels)
     (println "Successfully closed all channels")
     (let [chan (first channels)
@@ -44,6 +44,15 @@
     (when-let [value (async/poll! channel)]
       (f value))))
 
+(defn- dispatch! [data episode dispatches]
+  (foreach
+    (fn [[channel p]]
+      (when (p episode)
+        (async/go
+          (async/>! channel {:episode episode
+                             :data    data}))))
+    dispatches))
+
 (defn control [algorithm config]
   (fn [start eps]
     (async/thread
@@ -54,32 +63,23 @@
             (println episode))
           (algorithm start data episode)) config (range 1 eps)))))
 
-(defn control<- [algorithm config & channels]
-  (fn [start eps]
-    (async/thread
-      (do
-        (println "Executing")
-        (reduce (fn [data episode]
-                  (algorithm start data episode)) config (range 1 eps))
-        (apply close-all! channels)))))
-
 (defn control->
   ([algorithm config]
    (control algorithm config))
-  ([algorithm config channel]
-   (control-> algorithm config channel #(zero? (mod % 1))))
-  ([algorithm config channel p]
+  ([algorithm config dispatches]
    (fn [start eps]
      (async/thread
-       (let [res (reduce (fn [data episode]
-                           (when (zero? (mod episode 100))
-                             (println episode))
-                           (when (p episode)
-                             (async/go (async/>! channel {:episode episode
-                                                          :data    data})))
-                           (algorithm start data episode)) config (range 1 eps))]
-         (async/close! channel)
-         res)))))
+       (letfn [(destroy-return! [result-chan]
+                 (close-all! (map first dispatches))
+                 result-chan)]
+         (->>
+           (range 1 eps)
+           (reduce
+             (fn [data episode]
+               (when (zero? (mod episode 100)) (println episode))
+               (dispatch! data episode dispatches)
+               (algorithm start data episode)) config)
+           (destroy-return!)))))))
 
 ;; ========= Utils =========
 (defn action-mean [As]
@@ -524,8 +524,8 @@
                        (conj path (->Sample S A R))
                        S'))))))
 
-(defn derive-path
+(defn compute-path
   ([transition-f reward-f terminal?]
-   (derive-path greedy-by-max transition-f reward-f terminal?))
+   (compute-path greedy-by-max transition-f reward-f terminal?))
   ([find-greedily transition-f reward-f terminal?]
    (go-greedy find-greedily transition-f reward-f terminal?)))
