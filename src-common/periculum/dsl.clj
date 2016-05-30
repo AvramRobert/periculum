@@ -153,16 +153,17 @@
     :lambda => number
     :algorithm => function
     :episodes => number
+    :start => your start state
+    :action => function
+    :reward => function
+    :transition => function
+    :terminal => predicate
     :plots [{:title => string
              :schedule => predicate
              :method => keyword
             }
            ...
             ]
-
-   This DSL can be applied to any MDP, that utilises my RL API.
-   Note: if no other separate primitives are provided,
-   this defaults to my own MDP
   "
   (let [data (exp-data kvs)
         eps (val-of kvs :episodes)
