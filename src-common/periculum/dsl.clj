@@ -116,8 +116,7 @@
                                (:reward prims)
                                (:terminal prims))
             propagate (fn [p]
-                        (foreach
-                          #(async/go (async/>! echo-channel %)) p)
+                        (async/go (async/>! echo-channel p))
                         channel)]
         (->> channel
              (async/<!!)

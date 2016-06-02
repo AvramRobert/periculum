@@ -494,12 +494,12 @@
                      (not (some #(= % A) visited))) As)]
     (if (not (empty? filtered))
       (let [A (find-greedily filtered)]
-        [(drop-last path)
+        [(vec (drop-last path))
          (update excluded (:state culprit) #(conj % A))
          (->Pair (:state culprit) A)])
       (go-back find-greedily
                data
-               (drop-last path)
+               (vec (drop-last path))
                (update excluded (:state culprit) #(conj % (:action culprit)))))))
 
 (defn go-greedy [find-greedily trans-f reward-f terminal?]
@@ -507,22 +507,21 @@
     (loop [excluded {}
            path (tuples/tuple)
            S start]
-      (cond
-        (terminal? S)
+      (if (terminal? S)
         path
-        (cycled? path S)
-        (let [[rem-path n-excluded pair] (go-back find-greedily data path excluded)
-              R (reward-f (:state pair) (:action pair))
-              S' (trans-f (:state pair) (:action pair))]
-          (recur n-excluded
-                 (conj rem-path (->Sample (:state pair) (:action pair) R))
-                 S'))
-        :else (let [A (-> data (get-in [:q-values S]) (find-greedily))
-                    R (reward-f S A)
-                    S' (trans-f S A)]
-                (recur (update excluded S #(conj % A))
-                       (conj path (->Sample S A R))
-                       S'))))))
+        (if (cycled? path S)
+          (let [[rem-path n-excluded pair] (go-back find-greedily data path excluded)
+                R (reward-f (:state pair) (:action pair))
+                S' (trans-f (:state pair) (:action pair))]
+            (recur n-excluded
+                   (conj rem-path (->Sample (:state pair) (:action pair) R))
+                   S'))
+          (let [A (-> data (get-in [:q-values S]) (find-greedily))
+                R (reward-f S A)
+                S' (trans-f S A)]
+            (recur (update excluded S #(conj % A))
+                   (conj path (->Sample S A R))
+                   S')))))))
 
 (defn compute-path
   ([transition-f reward-f terminal?]

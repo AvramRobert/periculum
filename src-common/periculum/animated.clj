@@ -45,8 +45,11 @@
         y (get-in world-entity [:position :y])]
     (block-pos x y)))
 
-(defn normalise [x y]
-  (->Pos (/ x block-size) (/ y block-size)))
+(defn normalise
+  ([x y]
+   (->Pos (/ x block-size) (/ y block-size)))
+  ([position]
+   (->Pos (/ (:x position) block-size) (/ (:y position) block-size))))
 
 (defn frame-at [t]
   (-> t (* fpa) (Math/floor) (Math/round)))
@@ -102,8 +105,10 @@
       (-> entity
           (when-recorded append-to-path)
           (assoc
-            :state (assoc (:state entity) :position (norm-round pos')
+            :state (assoc (:state entity) :position (:correction entity)
                                           :previous-action action-k)
+            :x (-> entity :correction block-pos :x)
+            :y (-> entity :correction block-pos :y)
             :t 0.0
             :completed? true
             :current-action :stand))
@@ -143,19 +148,31 @@
   (on-player entities #(continue-action % (:current-action %))))
 
 (defn select-action [entity action]
-  (let [real-path (->> (path (:state entity) action)
-                       (pick-points)
-                       (map #(->Pos (* (-> % :position :x) block-size)
-                                    (* (-> % :position :y) block-size)))
-                       (map pos-to-vec))]
+  (let [path (path (:state entity) action)
+        control-points (->> path
+                            (pick-points)
+                            (map #(->Pos (* (-> % :position :x) block-size)
+                                         (* (-> % :position :y) block-size)))
+                            (map pos-to-vec))]
     (assoc entity
       :current-action action
+      :correction (-> path last :position)
       :completed? false
-      :interpolator (gmath/bezier real-path))))
+      :interpolator (gmath/bezier control-points))))
+
+(defn play-sequence [entity actions]
+  (if (empty? actions)
+    (dissoc entity :sequence)
+    (-> entity
+        (assoc :sequence (drop 1 actions))
+        (select-action (->> actions (first) :action)))))
 
 (defn attempt-next [entity]
-  (let [f (or-else #(select-action entity (:action %)) entity)]
-    (f (async/poll! play/result-channel))))
+  (if-let [actions (:sequence entity)]
+    (play-sequence entity actions)
+    (if-let [chain (async/poll! play/result-channel)]
+      (attempt-next (assoc entity :sequence chain))
+      entity)))
 
 (defn supply-action
   ([entities]
@@ -190,6 +207,7 @@
       :id :player
       :record? false
       :completed? true
+      :correction position
       :state (->State position :stand)
       :current-action :stand
       :t 0.0)))

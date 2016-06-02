@@ -27,7 +27,7 @@
                     :platforms empty-vec
                     })
 
-(def world (make-world world-config1))
+(def world (make-world world-config2))
 ;(def world (world-from-pixmap (str local-path "level1.png")))
 
 
