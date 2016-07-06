@@ -1,5 +1,5 @@
 (ns periculum.animated
-  (:use [periculum.learning]
+  (:use [periculum.domain]
         [periculum.world]
         [periculum.more])
   (:require

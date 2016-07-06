@@ -100,12 +100,14 @@
           :none)))))
 
 (defn world-from-pixmap [path]
+  "Given a path to a pixel-based map, it creates the appropriate gridworld entities and returns a vector of them"
   (let [image (imgs/load-image path)]
     (->> image
          (img->entities)
          (filter #(not= % :none)))))
 
 (defn make-world [config]
+  "Given a world configuration, it creates the appropriate gridworld entities and returns a vector of them"
   (let [{floor-conf     :floor
          holes-conf     :holes
          walls-conf     :walls

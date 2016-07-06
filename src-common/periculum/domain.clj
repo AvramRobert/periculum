@@ -1,10 +1,9 @@
-(ns periculum.learning
+(ns periculum.domain
   (:use [periculum.world])
   (:use [periculum.more])
   (:require [clj-tuple :as tuples])
   (:require [clojure.core.match :refer [match]])
-  (:require [play-clj.math :as gmath])
-  (import (com.badlogic.gdx.math Vector2)))
+  (:require [play-clj.math :as gmath]))
 
 (defrecord Action [velocity
                    time
@@ -111,18 +110,6 @@
         inter-f (interpolation start end)]
     (distinct (+++ t inter-f))))
 
-(defn <++> [linear]
-  "Bezier Cubic interpolation"
-  (let [points [(-> linear (first) (pos-to-vec))
-                (-> linear (mid) (pos-to-vec))
-                (-> linear (last) (pos-to-vec))]
-        spline (gmath/bezier points)
-        values (for [t (range 0.0 1.0 0.1)]
-                 (gmath/bezier! spline :value-at (new Vector2) t))]
-    (distinct
-      (map (fn [v]
-             (pos (Math/round (.x v)) (Math/round (.y v)))) values))))
-
 (defn deref-actions [actions lookup]
   (map #(lookup %) actions))
 
@@ -163,12 +150,14 @@
             (into ps (next path)))) (tuples/tuple start) (range 0 T-apex)))))
 
 (defn fall
+  "Simulates a fall"
   ([pos lookup actions]
    ((descend lookup) pos actions))
   ([pos lookup]
    ((descend lookup) pos empty-vec)))
 
 (defn move [lookup]
+  "Simulates a movement"
   (fn [pos action]
     (let [todo (deref-actions (tuples/tuple action) lookup)
           interpolated (<+> pos todo)
@@ -181,6 +170,7 @@
           (tuples/tuple t (into solid descent)))))))
 
 (defn jump [lookup]
+  "Simluates a jump"
   (fn [pos other-action]
     (let [T-apex (:time (lookup :jump))
           other (tuples/tuple other-action)
@@ -200,12 +190,16 @@
       (f item world))))
 
 (defn eta-one [world actions]
+  "Given a platformer world and the actions of this world, returns a closure.
+  The closure will, given a state, the most relevant world entity, that is associated state"
   (eta-gen world
            actions
            (fn [item -world]
              (find-some #(= (:position item) (:position %)) -world))))
 
 (defn eta [world actions]
+  "Given a platformer world and the actions of this world, returns a closure.
+  The closure will, given a state, return the world entities, that are associated with that state"
   (eta-gen world
            actions
            (fn [item -world]
@@ -213,12 +207,17 @@
 
 
 (defn eta-pos [world actions]
+  "Given a platformer world and the actions of this world, returns a closure.
+  The closure will, given a state, return the position of the most relevant entity, that is associated with that state"
   (eta-gen world
            actions
            (fn [item -world]
              (filter #(= (:position %) item) -world))))
 
 (defn omega [world actions]
+  "Given a platformer world and the available actions of this world, returns a closure.
+  The closure will, given a state and an action, compute all states the agent implicitly vistits during a state transition
+  and the time the transition took"
   (let [lookup (eta-pos world actions)]
     (fn [state action]
       (let [position (:position state)
@@ -264,6 +263,8 @@
             (last path)))))))
 
 (defn reward
+  "Given a platformer world and the terminal function, it returns a closure.
+  The closure will, given state and an action, give the appropriate reward for each state-action pair"
   ([world terminal?]
    (reward world primitive-actions Rewards terminal?))
   ([world actions terminal?]
@@ -272,17 +273,22 @@
    (reward-com world actions rewards terminal?)))
 
 (defn transition
+  "Given a platformer world and a terminal function, it returns a closure.
+  The closure will, given a state and an action, compute the next state of a state transition"
   ([world terminal?]
    (transition world primitive-actions terminal?))
   ([world actions terminal?]
    (transition-com world actions terminal?)))
 
 (defn terminal? [world]
+  "Given a platformer world, it returns a closure. The closure will, given a state,
+  appropriately detect end states"
   (let [max (max-by #(-> % (:position) (:x)) world)]
     (fn [state]
       (>= (-> state (:position) (:x)) (-> max (:position) (:x))))))
 
 (defn actions [S]
+  "Given a state, it returns the available actions for that state"
   (case (:previous-action S)
     :run-left [:stand
                :walk-left

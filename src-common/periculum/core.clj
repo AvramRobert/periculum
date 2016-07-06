@@ -184,9 +184,8 @@
              (let [animation-sheet (texture "sheet.png")
                    player-anim (agent-texture animation-sheet)
                    environment-sheet (texture "env-tiles1.png")
-
                    env-tiles (texture! environment-sheet :split half-block half-block)
-                   landscape (assoc (texture "wall1.jpg")
+                   landscape (assoc (texture "wall1.png")
                                :id :background
                                :width (:width screen)
                                :height (:height screen))

@@ -1,6 +1,6 @@
 (ns periculum.learning-spec
   (:use [periculum.world])
-  (:use [periculum.learning])
+  (:use [periculum.domain])
   (:use [periculum.more])
   (:use [clojure.test])
   (:require

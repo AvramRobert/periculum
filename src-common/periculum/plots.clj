@@ -165,6 +165,7 @@
           divide))) data))
 
 (defn reward-per-episode
+  "Plots the total reward of each optimum of every episode"
   ([]
    (reward-per-episode ""))
   ([title]
@@ -177,6 +178,7 @@
             "Rewards")))))
 
 (defn reward-per-action
+  "Plots the reward of each action of an optimum"
   ([]
    (reward-per-action ""))
   ([title]
@@ -189,6 +191,8 @@
             "Rewards")))))
 
 (defn steps-per-episode
+  "Plots the total amount of action-steps of each optimum
+  at every episode"
   ([]
    (steps-per-episode ""))
   ([title]
@@ -201,6 +205,8 @@
             "Steps")))))
 
 (defn mse-per-epsiode
+  "Given an expectation, it plots the mean-squared error relative to each optimum
+  of every episode"
   ([expectation-chain]
    (mse-per-epsiode expectation-chain ""))
   ([expectation-chain title]
@@ -212,6 +218,8 @@
                          "MSE")))))
 
 (defn value-per-state
+  "Plots the complete q-values.
+  This represents the domain and codomain of the learned policy"
   ([]
    (value-per-state ""))
   ([title]

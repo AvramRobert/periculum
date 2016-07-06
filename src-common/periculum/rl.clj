@@ -15,6 +15,7 @@
 (defrecord Sample [state action reward])
 
 (defn conf
+  "Configuration format used for the algorithms"
   ([gamma]
    (conf gamma 0.0))
   ([gamma alpha]
@@ -31,19 +32,6 @@
           _ (async/close! chan)]
       (recur (rest channels)))))
 
-(defn observer [channel init f]
-  (async/go-loop [value init]
-    (if-let [new-value (async/<! channel)]
-      (recur (f new-value))
-      (do
-        (println "Done")
-        value))))
-
-(defn delayed-observer [channel]
-  (fn [f]
-    (when-let [value (async/poll! channel)]
-      (f value))))
-
 (defn- dispatch! [data episode dispatches]
   (foreach
     (fn [[channel p]]
@@ -54,6 +42,9 @@
     dispatches))
 
 (defn control [algorithm config]
+  "Given a RL-Algorithm closure and some starting configuration, it returns a closure.
+  The closure will, given a starting state and a number of episodes, run the algorithm
+  for that amount of episodes in a separate thread"
   (fn [start eps]
     (async/thread
       (println "Executing")
@@ -64,6 +55,9 @@
           (algorithm start data episode)) config (range 1 eps)))))
 
 (defn control->
+  "Given a RL-Algorithm closure, some starting configuration and a number of channels, it returns a closure.
+  The closure will, given a starting state and a number of episodes, run the algorithm
+  for that amount of episodes in a separate thread and echo the intermediate Q-Values in the provided channels."
   ([algorithm config]
    (control algorithm config))
   ([algorithm config dispatches]
@@ -85,9 +79,6 @@
 (defn action-mean [As]
   (let [sum (reduce (fn [p [_ v]] (+ p v)) 0 As)]
     (/ sum (count As))))
-
-(defn v-π [data]
-  (update data :q-values #(map-values action-mean %)))
 
 (defn total-reward [chain]
   (reduce #(+ %1 (:reward %2)) 0.0 chain))
@@ -141,9 +132,13 @@
    (update-in data [:counts S A] #((or-else inc 1) %))))
 
 (defn greedy-by-min [As]
+  "Given an action-reward representation `{:action1 :reward :action2 :reward ..}`,
+  it chooses the action with the smallest expected reward"
   (-> (min-by val As) (keys) (first)))
 
 (defn greedy-by-max [As]
+  "Given an action-reward representation `{:action1 :reward :action2 :reward ..}`,
+   it chooses the action with the largest expected reward"
   (-> (max-by val As) (keys) (first)))
 
 (defn- simple-eval [policy-eval eps-count]
@@ -180,6 +175,10 @@
 ;; ========= Policies =========
 
 (defn- ε-policy [ε find-opt f]
+  "Generic function for ε-based policies.
+  Accepts a probability ε, a function for finding the greedy action and a mapping function `f`, which
+  allows an additional transformation of the probability ε. `f` is a binary function with parameters ε and the
+  current episode count"
   (fn [S As data eps-count]
     (if (contains? (:q-values data) S)
       (let [Qs (:q-values data)
@@ -193,6 +192,10 @@
       (rand-nth As))))
 
 (defn ε-greedy
+  "Given a probability ε, between [0, 1], it chooses with probability ε
+  the greedy action from the Q-Values and with 1 - ε an exploratory action.
+  It can accept an additional function, which states what the greedy action should be.
+  It can accept an additional channel, where it writes the current state and chosen action"
   ([ε]
    (ε-greedy ε greedy-by-max))
   ([ε find-greedily]
@@ -202,6 +205,7 @@
      (bootstrap-policy channel policy))))
 
 (defn GLIE-ε-greedy
+  "Similar behaviour to `ε-greedy`, however it reduces ε after each episode with 1/k, where k is the current episode count"
   ([ε]
    (GLIE-ε-greedy ε greedy-by-max))
   ([ε find-opt]
@@ -214,6 +218,7 @@
      (bootstrap-policy channel policy))))
 
 (defn GLIE-ε-episode
+  "Similar behaviour to `ε-greedy`, however ε is always preset to 1/k, where k is the current episode count"
   ([find-greedily]
    (ε-policy 0.0 find-greedily (fn [_ k]
                                  (/ 1 k))))
@@ -223,10 +228,13 @@
      (bootstrap-policy channel policy))))
 
 (defn ε-balanced
+  "Chooses exploratory actions randomly"
   ([S As data eps-count]
    (rand-nth As))
   ([channel]
    (bootstrap-policy channel ε-balanced)))
+
+;; ========= Aliases =========
 
 (def eps-balanced ε-balanced)
 
@@ -274,6 +282,9 @@
                    reward-f
                    transition-f
                    terminal?]
+  "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
+ it returns a closure. The closure will, given a start state, start data and current episode count,
+ applies Monte Carlo and returns the learned Q-Values"
   (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
     (bootstrap-eval mc-eval
                     (fn [_] true)
@@ -285,6 +296,7 @@
                      reward-f
                      transition-f
                      terminal?]
+  "Analogous to `monte-carlo`. It accepts an additional channel, where it writes its intermediate Q-Values"
   (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
     (bootstrap-eval channel
                     mc-eval
@@ -317,6 +329,9 @@
                reward-f
                transition-f
                terminal?]
+  "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
+  it returns a closure. The closure will, given a start state, start data and current episode count,
+  applies SARSA-1 and returns the learned Q-Values"
   (let [sarsa-eval (sarsa-1-eval policy action-f reward-f transition-f)]
     (fn [S data eps-count]
       (let [A (policy S (action-f S) data eps-count)
@@ -331,6 +346,7 @@
                  reward-f
                  transition-f
                  terminal?]
+  "Analogous to `sarsa-1`. It accepts an additional channel, where it writes its intermediate Q-Values"
   (let [sarsa-evl (sarsa-1-eval policy action-f reward-f transition-f)]
     (bootstrap-eval channel
                     sarsa-evl
@@ -396,6 +412,9 @@
                reward-f
                transition-f
                terminal?]
+  "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
+  it returns a closure. The closure will, given a start state, start data and current episode count,
+  applies SARSA-λ and returns the learned Q-Values"
   (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
     (fn [S data eps-count]
       (let [A (policy S (action-f S) data eps-count)
@@ -410,6 +429,7 @@
                  reward-f
                  transition-f
                  terminal?]
+  "Analogous to `sarsa-λ`. It accepts an additional channel, where it writes its intermediate Q-Values"
   (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
     (fn [S data eps-count]
       (let [A (policy S (action-f S) data eps-count)
@@ -440,6 +460,9 @@
                   reward-f
                   transition-f
                   terminal?]
+  "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
+  it returns a closure. The closure will, given a start state, start data and current episode count,
+  applies Q-Learning and returns the learned Q-Values "
   (let [greedy-policy (greedy find-greedily)
         q-eval (q-learning-eval policy greedy-policy action-f reward-f transition-f)]
     (bootstrap-eval q-eval
@@ -453,6 +476,7 @@
                     reward-f
                     transition-f
                     terminal?]
+  "Analogous to `q-learning`. It accepts an additional channel, where it writes its intermediate Q-Values"
   (let [greedy-policy (greedy find-greedily)
         q-eval (q-learning-eval policy greedy-policy action-f reward-f transition-f)]
     (bootstrap-eval channel
@@ -461,6 +485,10 @@
                     identity)))
 
 (defn sarsa-max
+  "Given a behaviour policy and the action, reward, transition and terminal functions,
+  (alternatively also a channel)
+  it returns a closure. The closure will, given a starting state, starting data and episode
+  count, apply Q-learning with the predefined max greedy policy"
   ([policy
     action-f
     reward-f
@@ -524,6 +552,10 @@
                    S')))))))
 
 (defn compute-path
+  "Computes the greedy path from given Q-Values.
+  Given the transtion, reward and terminal functions, it returns a closure.
+  The closure will, given a starting state and some learned Q-Values, calculate the greedy path through
+  the Q-Values and return the most `optimal` Markov Chain it could derive from the Q-Values."
   ([transition-f reward-f terminal?]
    (compute-path greedy-by-max transition-f reward-f terminal?))
   ([find-greedily transition-f reward-f terminal?]

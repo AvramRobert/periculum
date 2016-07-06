@@ -2,7 +2,7 @@
   (:use
     [periculum.world]
     [periculum.rl]
-    [periculum.learning]
+    [periculum.domain]
     [periculum.more]
     [periculum.plots])
   (:require
@@ -117,11 +117,15 @@
                                (:terminal prims))
             propagate (fn [p]
                         (async/go (async/>! echo-channel p))
-                        channel)]
-        (->> channel
-             (async/<!!)
-             (path start)
-             propagate))
+                        channel)
+            value (async/<!! channel)
+            ret (async/chan)]
+        (do
+          (->> value
+               (path start)
+               propagate)
+          (async/put! ret value)
+          ret))
       channel)))
 
 (defn- exp-plots [plots kvs]
