@@ -110,3 +110,14 @@
   (map #(map last %)
        (partition-by (fn [x]
                        (- (first x) (f (second x)))) (map-indexed vector coll))))
+
+(defn- spy [f item]
+  (do
+    (f item)
+    item))
+
+(defn spyl [item f]
+  (spy f item))
+
+(defn spyr [f item]
+  (spy f item))

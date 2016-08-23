@@ -10,6 +10,7 @@
     [play-clj.core :refer [shape, color, color!]]
     [clj-tuple :as tuples]))
 
+
 (defn make-sample [reward-f]
   (fn [path]
     (map #(->Sample (:state %) (:action %) (reward-f (:state %) (:action %))) path)))
@@ -44,8 +45,8 @@
      :action     action
      :reward     reward
      :transition transition
-     :terminal   terminal
-     }))
+     :terminal   terminal}))
+
 
 (defn- exp-primitives [kvs]
   (assert (with-mdp? kvs) "Please provide the necessary primitives for your MDP")

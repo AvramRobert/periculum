@@ -89,7 +89,7 @@
     (texture (aget tiles 1 2))                              ;;right corner
     (texture (aget tiles 1 1))                              ;;inner
     entities))
-
+    
 (defn agent-shape [x y]
   (let [pos (block-pos x y)]
     (assoc (shape :filled

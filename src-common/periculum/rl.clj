@@ -8,8 +8,8 @@
                  :counts   {}
                  :gamma    0.0
                  :alpha    0.0
-                 :lambda   0.0
-                 })
+                 :lambda   0.0})
+                 
 
 (defrecord Pair [state action])
 (defrecord Sample [state action reward])
@@ -110,18 +110,18 @@
 (defn Q
   ([data SA]
    ((or-else identity 0)
-     (get-in data [:q-values (:state SA) (:action SA)])))
+    (get-in data [:q-values (:state SA) (:action SA)])))
   ([data S A]
    ((or-else identity 0)
-     (get-in data [:q-values S A]))))
+    (get-in data [:q-values S A]))))
 
 (defn C
   ([data SA]
    ((or-else identity 0)
-     (get-in data [:counts (:state SA) (:action SA)])))
+    (get-in data [:counts (:state SA) (:action SA)])))
   ([data S A]
    ((or-else identity 0)
-     (get-in data [:counts S A]))))
+    (get-in data [:counts S A]))))
 
 (defn every-visit-inc
   ([data chain]

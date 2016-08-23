@@ -27,8 +27,8 @@
 (def G (gravity H-max T-apex))
 (def Rewards {:tic   0
               :solid -10
-              :end   15
-              })
+              :end   15})
+              
 
 (def primitive-actions {:stand      (->Action 0 1 [0 0])
                         :walk-left  (->Action 1 1 [-1 0])
@@ -36,8 +36,8 @@
                         :run-left   (->Action 2 1 [-1 0])
                         :run-right  (->Action 2 1 [1 0])
                         :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
-                        :fall       (->Action G 1 [0 -1])
-                        })
+                        :fall       (->Action G 1 [0 -1])})
+                        
 
 (def all-actions [:stand
                   :walk-left
@@ -137,8 +137,8 @@
                                                          (into visited (drop-last interpolated))
                                                          acts)
           :else (let [non-solid (take-while+ not-solid? interpolated)]
-                  (tuples/tuple (inc t) (into visited non-solid)))
-          )))))
+                  (tuples/tuple (inc t) (into visited non-solid))))))))
+          
 
 (defn ascend [lookup]
   (fn [start other-acts]
