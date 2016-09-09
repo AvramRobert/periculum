@@ -155,13 +155,13 @@
         (->>
           learning-data
           :q-values
-          (map-both (fn [k]
-                      (str (-> k :position :x)
-                           ":"
-                           (-> k :position :y)
-                           "-"
-                           (:previous-action k)))
-                    rl/action-mean)
+          (map-kv (fn [k]
+                    (str (-> k :position :x)
+                         ":"
+                         (-> k :position :y)
+                         "-"
+                         (:previous-action k)))
+                  rl/action-mean)
           divide))) data))
 
 (defn reward-per-episode

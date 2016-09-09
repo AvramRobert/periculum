@@ -89,7 +89,7 @@
       (pos (->> nx (Math/ceil) (Math/round))
            (->> ny (Math/ceil) (Math/round))))))
 
-(defn +++ [t inter]
+(defn +++ [ t inter]
   (map #(inter %) (range 0.0 (+ 1.0 t) t)))
 
 (defn endpoint [pos actions]

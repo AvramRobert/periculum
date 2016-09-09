@@ -1,5 +1,7 @@
 (ns periculum.more
-  (:require [clj-tuple :as tuples]))
+  (:require [clj-tuple :as tuples]
+            [incanter.stats :as is]
+            [clj-tuple :as t]))
 
 (def empty-vec
   (tuples/tuple))
@@ -36,20 +38,20 @@
     (let [rem (drop-while #(not (= % elm)) coll)]
       (f elm rem))))
 
+(defn map-vals-r [f map]
+  (reduce-kv
+    (fn [m k v]
+      (assoc m k (f k v))) (t/hash-map) map))
+
 (defn map-vals [f map]
-  (reduce
-    (fn [nmap [k v]]
-      (assoc nmap k (f k v))) {} map))
+  (reduce-kv
+    (fn [m k v]
+      (assoc m k (f v))) (t/hash-map) map))
 
-(defn map-keys [f map]
-  (reduce
-    (fn [nmap [k v]]
-      (assoc nmap (f k) v)) {} map))
-
-(defn map-both [kf vf map]
-  (reduce
-    (fn [nmap [k v]]
-      (assoc nmap (kf k) (vf v))) {} map))
+(defn map-kv [kf vf map]
+  (reduce-kv
+    (fn [m k v]
+      (assoc m (kf k) (vf v))) {} map))
 
 (defn filter-kv [pred map]
   (reduce
@@ -121,3 +123,19 @@
 
 (defn spyr [f item]
   (spy f item))
+
+;; Mean
+
+(defn extract [& s]
+  (->> s
+       (str)
+       (re-seq #": .*? ")
+       (map #(Double/parseDouble (clojure.string/replace % ": " "")))))
+
+(defn do-mean [& s]
+  ((comp is/mean extract) s))
+
+(defn print-count [coll]
+  (do
+    (println (str "\"About: " (count coll) " times\""))
+    coll))

@@ -38,6 +38,7 @@
     <orderEntry type="library" name="Leiningen: com.lowagie/itext:2.1.7" level="project" />
     <orderEntry type="library" name="Leiningen: commons-codec:1.5" level="project" />
     <orderEntry type="library" name="Leiningen: congomongo:0.3.3" level="project" />
+    <orderEntry type="library" name="Leiningen: criterium:0.4.4" level="project" />
     <orderEntry type="library" name="Leiningen: dom4j:1.6.1" level="project" />
     <orderEntry type="library" name="Leiningen: handy/map-values:1.0.1" level="project" />
     <orderEntry type="library" name="Leiningen: incanter/incanter-charts:1.5.7" level="project" />
@@ -116,6 +117,7 @@
     <orderEntry type="library" name="Leiningen: org.ow2.asm/asm-all:4.2" level="project" />
     <orderEntry type="library" name="Leiningen: org.scilab.forge/jlatexmath:0.9.6" level="project" />
     <orderEntry type="library" name="Leiningen: play-clj:1.0.0" level="project" />
+    <orderEntry type="library" name="Leiningen: primitive-math:0.1.5" level="project" />
     <orderEntry type="library" name="Leiningen: slingshot:0.10.3" level="project" />
     <orderEntry type="library" name="Leiningen: stax/stax-api:1.0.1" level="project" />
     <orderEntry type="library" name="Leiningen: xalan:2.6.0" level="project" />

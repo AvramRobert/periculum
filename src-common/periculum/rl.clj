@@ -1,15 +1,15 @@
 (ns periculum.rl
   (:require [clojure.core.async :as async]
-            [clj-tuple :as tuples])
-  (:use [periculum.more])
-  (:use [handy.map-values]))
+            [clj-tuple :as t]
+            [handy.map-values :as h])
+  (:use [periculum.more]))
 
 (def empty-data {:q-values {}
                  :counts   {}
                  :gamma    0.0
                  :alpha    0.0
                  :lambda   0.0})
-                 
+
 
 (defrecord Pair [state action])
 (defrecord Sample [state action reward])
@@ -41,6 +41,12 @@
                              :data    data}))))
     dispatches))
 
+(defn docontrol [algorithm config]
+  (fn [start eps]
+    (reduce
+      (fn [data episode]
+        (algorithm data start episode)) config (range 1 eps))))
+
 (defn control [algorithm config]
   "Given a RL-Algorithm closure and some starting configuration, it returns a closure.
   The closure will, given a starting state and a number of episodes, run the algorithm
@@ -50,9 +56,8 @@
       (println "Executing")
       (reduce
         (fn [data episode]
-          (when (zero? (mod episode 100))
-            (println episode))
-          (algorithm start data episode)) config (range 1 eps)))))
+          (when (zero? (mod episode 100)) (println episode))
+          (algorithm data start episode)) config (range 1 eps)))))
 
 (defn control->
   "Given a RL-Algorithm closure, some starting configuration and a number of channels, it returns a closure.
@@ -72,7 +77,7 @@
              (fn [data episode]
                (when (zero? (mod episode 100)) (println episode))
                (dispatch! data episode dispatches)
-               (algorithm start data episode)) config)
+               (algorithm data start episode)) config)
            (destroy-return!)))))))
 
 ;; ========= Utils =========
@@ -96,7 +101,7 @@
                  action-f
                  reward-f
                  transition-f]
-  (fn [start data eps-count]
+  (fn [data start eps-count]
     (let [S start
           A (policy S (action-f S) data eps-count)
           R (reward-f S A)]
@@ -110,18 +115,18 @@
 (defn Q
   ([data SA]
    ((or-else identity 0)
-    (get-in data [:q-values (:state SA) (:action SA)])))
+     (get-in data [:q-values (:state SA) (:action SA)])))
   ([data S A]
    ((or-else identity 0)
-    (get-in data [:q-values S A]))))
+     (get-in data [:q-values S A]))))
 
 (defn C
   ([data SA]
    ((or-else identity 0)
-    (get-in data [:counts (:state SA) (:action SA)])))
+     (get-in data [:counts (:state SA) (:action SA)])))
   ([data S A]
    ((or-else identity 0)
-    (get-in data [:counts S A]))))
+     (get-in data [:counts S A]))))
 
 (defn every-visit-inc
   ([data chain]
@@ -142,14 +147,14 @@
   (-> (max-by val As) (keys) (first)))
 
 (defn- simple-eval [policy-eval eps-count]
-  (fn [[S new-data]]
-    (policy-eval S new-data eps-count)))
+  (fn [[new-data S]]
+    (policy-eval new-data S eps-count)))
 
 (defn- echo-eval [channel policy-eval eps-count]
   (fn [[S prev-data]]
     (let [[S' new-data] (policy-eval S prev-data eps-count)
           _ (async/go (async/>! channel new-data))]
-      (tuples/tuple S' new-data))))
+      (t/tuple S' new-data))))
 
 (defn- bootstrap-policy [channel policy]
   (fn [S As data eps-count]
@@ -159,16 +164,16 @@
 
 (defn- bootstrap-eval
   ([policy-eval terminal? f]
-   (fn [start data eps-count]
-     (let [[_ new-data] (apply-while (fn [[S _]] (not (terminal? S)))
+   (fn [data start eps-count]
+     (let [[new-data _] (apply-while (fn [[_ S]] (not (terminal? S)))
                                      (simple-eval policy-eval eps-count)
-                                     (tuples/tuple start data))]
+                                     (t/tuple data start))]
        (f new-data))))
   ([channel policy-eval terminal? f]
-   (fn [start data eps-count]
-     (let [[_ new-data] (apply-while (fn [[S _]] (not (terminal? S)))
+   (fn [data start eps-count]
+     (let [[new-data _] (apply-while (fn [[_ S]] (not (terminal? S)))
                                      (echo-eval channel policy-eval eps-count)
-                                     (tuples/tuple start data))]
+                                     (t/tuple data start))]
        (f new-data)))))
 
 
@@ -256,7 +261,6 @@
      (bootstrap-policy channel policy))))
 
 ;; ============ Monte Carlo ============
-
 (defn monte-carlo-update [data sample]
   (let [{S     :state
          A     :action
@@ -270,12 +274,12 @@
                         reward-f
                         transition-f
                         terminal?]
-  (fn [start data eps-count]
+  (fn [data start eps-count]
     (let [chain-from (lazy-traj policy action-f reward-f transition-f)
-          markov-chain (take-while+ #(not (terminal? (:state %))) (chain-from start data eps-count))
+          markov-chain (take-while+ #(not (terminal? (:state %))) (chain-from data start eps-count))
           Gt-R (Gt markov-chain (:gamma data))
           data-counted (every-visit-inc data markov-chain)]
-      (tuples/tuple start (reduce monte-carlo-update data-counted Gt-R)))))
+      (t/tuple (reduce monte-carlo-update data-counted Gt-R) start))))
 
 (defn monte-carlo [policy
                    action-f
@@ -284,7 +288,7 @@
                    terminal?]
   "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
  it returns a closure. The closure will, given a start state, start data and current episode count,
- applies Monte Carlo and returns the learned Q-Values"
+ applies Monte Carlo and return the learned Q-Values"
   (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
     (bootstrap-eval mc-eval
                     (fn [_] true)
@@ -304,7 +308,6 @@
                     identity)))
 
 ;; ========= SARSA(1) =========
-
 (defn sarsa-update [S A R S' A' data]
   (let [alpha (:alpha data)
         gamma (:gamma data)
@@ -316,13 +319,13 @@
                     action-f
                     reward-f
                     transition-f]
-  (fn [SA data eps-count]
+  (fn [data SA eps-count]
     (let [{S :state
            A :action} SA
           R (reward-f S A)
           S' (transition-f S A)
           A' (policy S' (action-f S') data eps-count)]
-      (tuples/tuple (->Pair S' A') (sarsa-update S A R S' A' data)))))
+      (t/tuple (sarsa-update S A R S' A' data) (->Pair S' A')))))
 
 (defn sarsa-1 [policy
                action-f
@@ -333,12 +336,12 @@
   it returns a closure. The closure will, given a start state, start data and current episode count,
   applies SARSA-1 and returns the learned Q-Values"
   (let [sarsa-eval (sarsa-1-eval policy action-f reward-f transition-f)]
-    (fn [S data eps-count]
+    (fn [data S eps-count]
       (let [A (policy S (action-f S) data eps-count)
             evaluator (bootstrap-eval sarsa-eval
                                       #(terminal? (:state %))
                                       identity)]
-        (evaluator (->Pair S A) data eps-count)))))
+        (evaluator data (->Pair S A) eps-count)))))
 
 (defn sarsa-1<- [channel
                  policy
@@ -354,7 +357,6 @@
                     identity)))
 
 ;;  ========= SARSA(λ) =========
-
 (defn reset-eligibilities [data]
   (assoc data :counts {}))
 
@@ -364,48 +366,38 @@
         Q-SA (Q data S A)]
     (+ R (- (* γ Q-S'A') Q-SA))))
 
-(defn Q-sarsa-λ [data S As δ]
+(defn Q-sarsa-λ [data δ]
   (let [α (:alpha data)]
-    (map-vals
-      (fn [A R]
-        (let [E (C data S A)]
-          (+ R (* α δ E)))) As)))
+    (merge-with
+      #(merge-with (fn [R E] (+ R (* α δ E))) %1 %2) (:q-values data) (:counts data))))
 
-(defn E-sarsa-λ [data S]
+(defn E-sarsa-λ [data]
   (let [γ (:gamma data)
-        λ (:lambda data)
-        As (get-in data [:counts S])]
+        λ (:lambda data)]
     (map-vals
-      (fn [_ C]
-        (* γ λ C)) As)))
+      #(map-vals (fn [E] (* γ λ E)) %) (:counts data))))
 
-(defn sarsa-λ-update [SA data δ]
-  (let [{S :state
-         A :action} SA
-        associated (update-in data [:q-values S A]
-                              (fn [itm]
-                                ((or-else identity 0) itm)))]
-    (reduce
-      (fn [new-data [S As]]
-        (let [Q-SA (Q-sarsa-λ new-data S As δ)
-              E-SA (E-sarsa-λ new-data S)
-              update1 (assoc-in new-data [:q-values S] Q-SA)
-              update2 (assoc-in update1 [:counts S] E-SA)]
-          update2)) associated (:q-values associated))))
+(defn sarsa-λ-update [data err]
+  (-> data
+      (assoc :q-values (Q-sarsa-λ data err))                ;; blame all Qs based on their eligibility and current error
+      (assoc :counts (E-sarsa-λ data))))                    ;; decay all eligibilities
 
 (defn sarsa-λ-eval [policy
                     action-f
                     reward-f
                     transition-f]
-  (fn [SA data eps-count]
+  (fn [data SA eps-count]
     (let [{S :state
            A :action} SA
           R (reward-f S A)
           S' (transition-f S A)
           A' (policy S' (action-f S') data eps-count)
-          δ (td-error S A R S' A' data)
-          updated-data (every-visit-inc data S A)]
-      (tuples/tuple (->Pair S' A') (sarsa-λ-update (->Pair S A) updated-data δ)))))
+          δ (td-error S A R S' A' data)]
+      (-> data
+          (update-in [:q-values S A] #((or-else identity 0) %)) ;; init S A in Qs
+          (every-visit-inc S A)                             ;; increment eligibility
+          (sarsa-λ-update δ)                                ;; blame and decay
+          (t/tuple (->Pair S' A'))))))                      ;; return new data and next pair
 
 (defn sarsa-λ [policy
                action-f
@@ -416,12 +408,12 @@
   it returns a closure. The closure will, given a start state, start data and current episode count,
   applies SARSA-λ and returns the learned Q-Values"
   (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
-    (fn [S data eps-count]
+    (fn [data S eps-count]
       (let [A (policy S (action-f S) data eps-count)
             evaluator (bootstrap-eval λ-eval
                                       #(terminal? (:state %))
                                       reset-eligibilities)]
-        (evaluator (->Pair S A) data eps-count)))))
+        (evaluator data (->Pair S A) eps-count)))))
 
 (defn sarsa-λ<- [channel
                  policy
@@ -431,13 +423,13 @@
                  terminal?]
   "Analogous to `sarsa-λ`. It accepts an additional channel, where it writes its intermediate Q-Values"
   (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
-    (fn [S data eps-count]
+    (fn [data S eps-count]
       (let [A (policy S (action-f S) data eps-count)
             evaluator (bootstrap-eval channel
                                       λ-eval
                                       #(terminal? (:state %))
                                       reset-eligibilities)]
-        (evaluator (->Pair S A) data eps-count)))))
+        (evaluator data (->Pair S A) eps-count)))))
 
 ;; ========= Q-Learning =========
 
@@ -446,12 +438,12 @@
                        action-f
                        reward-f
                        transition-f]
-  (fn [S data eps-count]
+  (fn [data S eps-count]
     (let [A (policy S (action-f S) data eps-count)
           R (reward-f S A)
           S' (transition-f S A)
           A' (greedy-policy S' (action-f S') data eps-count)]
-      (tuples/tuple S' (sarsa-update S A R S' A' data)))))
+      (t/tuple (sarsa-update S A R S' A' data) S'))))
 
 
 (defn q-learning [find-greedily
@@ -533,7 +525,7 @@
 (defn go-greedy [find-greedily trans-f reward-f terminal?]
   (fn [start data]
     (loop [excluded {}
-           path (tuples/tuple)
+           path (t/tuple)
            S start]
       (if (terminal? S)
         path

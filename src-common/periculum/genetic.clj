@@ -39,7 +39,10 @@
                                   (take elite#)
                                   (repopulate mutate cross indv#)
                                   (recur (dec generation)))
-            :default (first civilization)))))))
+            :default (->> fitted
+                          (sort-by :score)
+                          (first))))))))
+
 
 (defn map-error [eval f]
   (update-in eval [:errors] f))
@@ -52,10 +55,12 @@
 
 ;; Test
 
-(def char-stream
-  (iterate #(-> % (int) (inc) (char)) \A))
+(defn char-stream [start]
+  (iterate #(-> % (int) (inc) (char)) start))
 
-(def alphabet (take 26 char-stream))
+(def caps-alphabet (take 26 (char-stream \A)))
+(def non-caps-alphabet (take 26 (char-stream \a)))
+(def alphabet (concat caps-alphabet non-caps-alphabet [\space]))
 
 (defn babel [length]
   (vec (map (fn [_] (rand-nth alphabet)) (range 0 length))))

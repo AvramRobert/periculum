@@ -27,16 +27,15 @@
                     :platforms empty-vec
                     })
 
-(def world-config3 {:floor (m-struct 20 0 (pos 0 0))
-                    :holes [(pos 4 0) (pos 5 0) (pos 6 0)
-                            (pos 7 0) (pos 8 0) (pos 9 0)
-                            (pos 10 0) (pos 11 0) (pos 12 0)]
-                    :walls [(m-struct 2 3 (pos 13 1))]
+(def world-config3 {:floor     (m-struct 20 0 (pos 0 0))
+                    :holes     [(pos 4 0) (pos 5 0) (pos 6 0)
+                                (pos 7 0) (pos 8 0) (pos 9 0)
+                                (pos 10 0) (pos 11 0) (pos 12 0)]
+                    :walls     [(m-struct 2 3 (pos 13 1))]
                     :platforms [(m-struct 2 (pos 5 3)) (m-struct 2 (pos 8 4))]})
 
 (def world (make-world world-config3))
 ;(def world (world-from-pixmap (str local-path "level1.png")))
-
 
 (defn- -local-prims [w kvs]
   (let [t? (terminal? w)
@@ -49,6 +48,33 @@
                 (fn [_]
                   add) (conj add (state 1 1 :stand) :start)) (val-of kvs :start))]
     (into kvs args)))
+
+;; BENCHMARKING
+(defn doexpr
+  ([algorithm
+    policy
+    gamma]
+   (doexpr algorithm policy gamma 0.0 0.0))
+  ([algorithm
+    policy
+    gamma
+    alpha]
+   (doexpr algorithm policy gamma alpha 0.0))
+  ([algorithm
+    policy
+    gamma
+    alpha
+    lambda]
+   (let [prims (reverse (-local-prims world []))
+         start (val-of prims :start)
+         expanded (algorithm policy
+                             (val-of prims :action)
+                             (val-of prims :reward)
+                             (val-of prims :transition)
+                             (val-of prims :terminal))
+         com (docontrol expanded (conf gamma alpha lambda))]
+     (com start 400))))
+;;
 
 (defn recompute [w & kvs]
   (let [vs (-local-prims w kvs)
