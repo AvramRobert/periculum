@@ -37,6 +37,7 @@
 (def world (make-world world-config3))
 ;(def world (world-from-pixmap (str local-path "level1.png")))
 
+
 (defn- -local-prims [w kvs]
   (let [t? (terminal? w)
         add [actions :action
@@ -49,32 +50,6 @@
                   add) (conj add (state 1 1 :stand) :start)) (val-of kvs :start))]
     (into kvs args)))
 
-;; BENCHMARKING
-(defn doexpr
-  ([algorithm
-    policy
-    gamma]
-   (doexpr algorithm policy gamma 0.0 0.0))
-  ([algorithm
-    policy
-    gamma
-    alpha]
-   (doexpr algorithm policy gamma alpha 0.0))
-  ([algorithm
-    policy
-    gamma
-    alpha
-    lambda]
-   (let [prims (reverse (-local-prims world []))
-         start (val-of prims :start)
-         expanded (algorithm policy
-                             (val-of prims :action)
-                             (val-of prims :reward)
-                             (val-of prims :transition)
-                             (val-of prims :terminal))
-         com (docontrol expanded (conf gamma alpha lambda))]
-     (com start 400))))
-;;
 
 (defn recompute [w & kvs]
   (let [vs (-local-prims w kvs)

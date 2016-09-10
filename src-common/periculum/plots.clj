@@ -32,8 +32,7 @@
 (defn capture [channel f]
   (loop [gathered (tuples/tuple)]
     (if-let [data (async/<!! channel)]
-      (do
-        (recur (conj gathered data)))
+      (recur (conj gathered data))
       (do
         (println "Done")
         (map f gathered)))))
@@ -76,36 +75,6 @@
           :x-label x-label
           :y-label y-label
           :title (str title ":: Episode " episode)))) data))
-
-(defn- scatter-in!
-  [title x-label y-label data]
-  (letfn [(set-opt [plot]
-            (apply-options plot
-                           [:title title
-                            :x-label x-label
-                            :y-label y-label]))]
-    (->> data
-         (reduce (fn [plot {x-data :x
-                            y-data :y}]
-                   (add-points plot x-data y-data)) (scatter-plot))
-         (set-opt)
-         view)))
-
-(defn- scatter-out!
-  [title x-label y-label data]
-  (letfn [(set-opt [plot episode]
-            (apply-options plot
-                           [:title (str title " :: Episode " episode)
-                            :x-label x-label
-                            :y-label y-label]))]
-    (foreach
-      (fn [{episode :episode
-            x-data  :x
-            y-data  :y}]
-        (-> (scatter-plot)
-            (add-points x-data y-data)
-            (set-opt episode)
-            view)) data)))
 
 (defn- rew|eps [data]
   (map (fn [{episode :episode

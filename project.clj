@@ -15,6 +15,7 @@
                  [play-clj "1.0.0"]
                  [org.clojure/test.check "0.9.0"]
                  [clj-tuple "0.2.2"]
+                 [org.flatland/useful "0.11.5"]
                  [org.clojure/core.match "0.3.0-alpha4"]
                  [org.clojure/core.async "0.2.374"]
                  [net.mikera/imagez "0.10.0"]

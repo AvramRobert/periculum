@@ -1,9 +1,20 @@
-(ns periculum.examples.rl-triangle-path
+(ns periculum.examples.rl_triangle_path
   (:use [periculum.rl])
   (:require [clojure.core.match :refer [match]]
             [clojure.core.async :as async]
             [periculum.rl :as rl]
             [periculum.dsl :as dsl]))
+
+;; An example usage of the Reinforcement Learning API.
+
+;; The problem solved here is that of the triangle path.
+;; Given a triangle path similar to the one below (see `world`),
+;; find the most minimal path from top to bottom, whereby the value of
+;; each path is the sum of all the visited cells.
+;; The single rule is that you are allowed to go only left down or right down
+;; from you current position.
+
+;; For this `world`, the optimum is: (3 4 3 2 7 1)
 
 (defrecord cell [row index])
 
@@ -47,7 +58,7 @@
        (find-best nil-cell)
        (as-reward)))
 
-;; works very well with this MDP
+;; Monte Carlo works very well with this MDP
 (defn run-mc [episodes]
   (triangle-path
     (dsl/deflearn
@@ -62,9 +73,7 @@
       :episodes episodes
       :policy (eps-greedy 0.6 greedy-by-min))))
 
-;; SARSA won't work with this MDP, because the reward is dependent on continuation
-;; SARSA must be greedy in the limit in order for its convergence to work
-;; The problem is, SARSA is also 100% convergent if all states are visited infinitely many times. This I do not do.
+;; SARSA-1 works pretty well with this MDP
 (defn run-sarsa-1 [eps]
   (triangle-path
     (dsl/deflearn
@@ -78,9 +87,9 @@
       :alpha 0.2
       :start (->cell 0 0)
       :episodes eps
-      :policy (GLIE-ε-greedy 0.6 greedy-by-min))))
+      :policy (GLIE-eps-greedy 0.6 greedy-by-min))))
 
-;; SARSA λ also works and depending on alpha, lambda and exploration, it can be more effective than MC
+;; SARSA λ works preety well with this MDP
 (defn run-sarsa-λ [eps]
   (triangle-path
     (dsl/deflearn
@@ -91,13 +100,13 @@
       :reward rewf
       :algorithm sarsa-λ
       :gamma 1.0
-      :alpha 0.1
-      :lambda 0.9
+      :alpha 0.3
+      :lambda 0.4
       :start (->cell 0 0)
       :episodes eps
       :policy (eps-greedy 0.6 greedy-by-min))))
 
-;; works very well with this MDP
+;; Q-Learning works very well with this MDP
 (defn run-q-learning [eps]
   (triangle-path
     (dsl/deflearn
@@ -107,7 +116,7 @@
       :terminal termf
       :reward rewf
       :algorithm (fn [policy action-f reward-f transition-f terminal?]
-                   (q-learning greedy-by-min policy action-f reward-f transition-f terminal?))
+                   (q-learning policy (greedy greedy-by-min) action-f reward-f transition-f terminal?))
       :gamma 0.9
       :alpha 0.5
       :start (->cell 0 0)

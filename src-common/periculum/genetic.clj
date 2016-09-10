@@ -3,29 +3,56 @@
             [clj-tuple :as t])
   (:import (java.util Random)))
 
-(defrecord Eval [individual score errors])
-
-(defn lift-eval [item] (->Eval item 0 (t/tuple)))
-
-(defn non-det [a f g]
-  (let [rnd (new Random)]
-    (if (.nextBoolean rnd) (f a) (g a))))
-
-(defn repopulate [mutate cross amount rem]
-  (reduce
-    (fn [civ _]
-      (non-det rem
-               #(into civ (cross (rand-nth %) (rand-nth %)))
-               #(conj civ (mutate (rand-nth %)))))
-    (map :individual rem) (range 0 amount)))
-
 (comment
   "Evaluation
   { :attempt _
     :score   _
     :errors  _ }")
 
+(defrecord Eval [individual score errors])
+
+(defn map-error [eval f]
+  (update-in eval [:errors] f))
+
+(defn map-score [eval f]
+  (update-in eval [:score] f))
+
+(defn map-indv [eval f]
+  (update-in eval [:individual] f))
+
+(defn lift-eval [item] (->Eval item 0 (t/tuple)))
+
+(defn- non-det [a f g]
+  "Applies function `f` or `g` to `a` non-deterministically."
+  (let [rnd (new Random)]
+    (if (.nextBoolean rnd) (f a) (g a))))
+
+(defn- repopulate [mutate cross amount elite]
+  "Creates a new population, based on some pre-existing elite, by
+  appling mutation and crossover non-deterministically until the given
+  `amount` of individuals have been created."
+  (reduce
+    (fn [civ _]
+      (non-det elite
+               #(into civ (cross (rand-nth %) (rand-nth %)))
+               #(conj civ (mutate (rand-nth %)))))
+    (map :individual elite) (range 0 amount)))
+
 (defn evolve [init fitness mutate cross perfect?]
+  "A simple function that runs a genetic algorithm.
+  This function essetially receives every meaningful part of a
+  genetic algorithm (i.e. mutation, crossover, fitness etc) as a parameter.
+  Given these, plus a starting population and a way to find the perfect individual,
+  it returns a function, which accepts a number of generations and elites.
+  This function is then applied to run the algorithm.
+
+  The provided parameters are of the following type:
+    Init: sequence of some `A`
+    Mutation: function of A -> A,
+    Cross: function of (A, A) -> (A, A)
+    Fitness: function of A -> Eval
+    Perfect: function of A -> Boolean"
+
   (let [indv# (count init)]
     (fn [gen# elite#]
       (loop [generation gen#
@@ -42,57 +69,3 @@
             :default (->> fitted
                           (sort-by :score)
                           (first))))))))
-
-
-(defn map-error [eval f]
-  (update-in eval [:errors] f))
-
-(defn map-score [eval f]
-  (update-in eval [:score] f))
-
-(defn map-indv [eval f]
-  (update-in eval [:individual] f))
-
-;; Test
-
-(defn char-stream [start]
-  (iterate #(-> % (int) (inc) (char)) start))
-
-(def caps-alphabet (take 26 (char-stream \A)))
-(def non-caps-alphabet (take 26 (char-stream \a)))
-(def alphabet (concat caps-alphabet non-caps-alphabet [\space]))
-
-(defn babel [length]
-  (vec (map (fn [_] (rand-nth alphabet)) (range 0 length))))
-
-(defn mutate [evaluatee]
-  (let [ridx (rand-nth (:errors evaluatee))]
-    (map-indexed
-      (fn [idx letter]
-        (if (= idx ridx) (rand-nth alphabet) letter)) (:individual evaluatee))))
-
-(defn cross [evaluatee1 evaluatee2]
-  (let [section (rand-int (count (:individual evaluatee1)))
-        fuse (fn [amount from to] (into (drop amount (:individual to)) (take amount (:individual from))))]
-    (t/tuple
-      (fuse section evaluatee1 evaluatee2)
-      (fuse section evaluatee2 evaluatee1))))
-
-(defn evaluator [name]
-  (fn [evaluatee]
-    (second
-      (reduce
-        (fn [[idx ev] letter]
-          (if (= letter (nth (:individual ev) idx))
-            (t/tuple (inc idx) ev)
-            (t/tuple (inc idx)
-                     (-> ev
-                         (map-score inc)
-                         (map-error #(conj % idx)))))) (t/tuple 0 evaluatee) name))))
-
-(defn perfect? [eval] (= (:score eval) 0))
-
-(defn population [word]
-  (let [letter# (count word)
-        start (babel letter#)]
-    (iterate (fn [_] (babel letter#)) start)))

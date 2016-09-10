@@ -40,7 +40,6 @@
     <orderEntry type="library" name="Leiningen: congomongo:0.3.3" level="project" />
     <orderEntry type="library" name="Leiningen: criterium:0.4.4" level="project" />
     <orderEntry type="library" name="Leiningen: dom4j:1.6.1" level="project" />
-    <orderEntry type="library" name="Leiningen: handy/map-values:1.0.1" level="project" />
     <orderEntry type="library" name="Leiningen: incanter/incanter-charts:1.5.7" level="project" />
     <orderEntry type="library" name="Leiningen: incanter/incanter-core:1.5.7" level="project" />
     <orderEntry type="library" name="Leiningen: incanter/incanter-excel:1.5.7" level="project" />
@@ -102,9 +101,11 @@
     <orderEntry type="library" name="Leiningen: org.clojure/test.check:0.9.0" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/tools.analyzer.jvm:0.6.5" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/tools.analyzer:0.6.4" level="project" />
+    <orderEntry type="library" name="Leiningen: org.clojure/tools.macro:0.1.1" level="project" />
     <orderEntry type="library" name="Leiningen: org.clojure/tools.nrepl:0.2.6" level="project" />
-    <orderEntry type="library" name="Leiningen: org.clojure/tools.reader:0.8.12" level="project" />
+    <orderEntry type="library" name="Leiningen: org.clojure/tools.reader:0.7.2" level="project" />
     <orderEntry type="library" name="Leiningen: org.danlarkin/clojure-json:1.1" level="project" />
+    <orderEntry type="library" name="Leiningen: org.flatland/useful:0.11.5" level="project" />
     <orderEntry type="library" name="Leiningen: org.imgscalr/imgscalr-lib:4.2" level="project" />
     <orderEntry type="library" name="Leiningen: org.jblas/jblas:1.2.3" level="project" />
     <orderEntry type="library" name="Leiningen: org.jcraft/jorbis:0.0.17" level="project" />

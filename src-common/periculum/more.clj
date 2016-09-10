@@ -38,11 +38,6 @@
     (let [rem (drop-while #(not (= % elm)) coll)]
       (f elm rem))))
 
-(defn map-vals-r [f map]
-  (reduce-kv
-    (fn [m k v]
-      (assoc m k (f k v))) (t/hash-map) map))
-
 (defn map-vals [f map]
   (reduce-kv
     (fn [m k v]
@@ -66,19 +61,6 @@
     (if (pred h)
       (recur (conj acc h) tail)
       (conj acc h))))
-
-(defn apply-n [n f init]
-  (loop [value init
-         cur n]
-    (if (<= cur 0)
-      value
-      (recur (f value) (dec cur)))))
-
-(defn apply-while [pred f init]
-  (loop [value init]
-    (if (pred value)
-      (recur (f value))
-      (f value))))
 
 (defn last-or [coll else]
   (if (empty? coll)
@@ -108,10 +90,16 @@
 (defn rmse [predicted expected]
   (Math/sqrt (mse predicted expected)))
 
-(defn group-consec [f coll]
-  (map #(map last %)
-       (partition-by (fn [x]
-                       (- (first x) (f (second x)))) (map-indexed vector coll))))
+(defn choose-dist [items probs]
+  (let [r (Math/random)]
+    (->> probs
+         (reductions +)
+         (zipmap items)
+         (reduce (fn [[pk pv] [ck cv]]
+                   (if (and (> r pv) (< r cv))
+                     (t/tuple ck cv)
+                     (t/tuple pk pv))) [:none 0.0])
+         (first))))
 
 (defn- spy [f item]
   (do
@@ -124,18 +112,18 @@
 (defn spyr [f item]
   (spy f item))
 
-;; Mean
+(comment
+  ;; Mean
+  (defn extract [& s]
+    (->> s
+         (str)
+         (re-seq #": .*? ")
+         (map #(Double/parseDouble (clojure.string/replace % ": " "")))))
 
-(defn extract [& s]
-  (->> s
-       (str)
-       (re-seq #": .*? ")
-       (map #(Double/parseDouble (clojure.string/replace % ": " "")))))
+  (defn do-mean [& s]
+    ((comp is/mean extract) s))
 
-(defn do-mean [& s]
-  ((comp is/mean extract) s))
-
-(defn print-count [coll]
-  (do
-    (println (str "\"About: " (count coll) " times\""))
-    coll))
+  (defn print-count [coll]
+    (do
+      (println (str "\"About: " (count coll) " times\""))
+      coll)))

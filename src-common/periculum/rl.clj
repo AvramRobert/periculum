@@ -1,7 +1,7 @@
 (ns periculum.rl
   (:require [clojure.core.async :as async]
             [clj-tuple :as t]
-            [handy.map-values :as h])
+            [flatland.useful.seq :as s])
   (:use [periculum.more]))
 
 (def empty-data {:q-values {}
@@ -10,20 +10,8 @@
                  :alpha    0.0
                  :lambda   0.0})
 
-
 (defrecord Pair [state action])
 (defrecord Sample [state action reward])
-
-(defn conf
-  "Configuration format used for the algorithms"
-  ([gamma]
-   (conf gamma 0.0))
-  ([gamma alpha]
-   (conf gamma alpha 0.0))
-  ([gamma alpha lambda]
-   (assoc empty-data :gamma gamma
-                     :alpha alpha
-                     :lambda lambda)))
 
 (defn- close-all! [channels]
   (if (empty? channels)
@@ -40,12 +28,6 @@
           (async/>! channel {:episode episode
                              :data    data}))))
     dispatches))
-
-(defn docontrol [algorithm config]
-  (fn [start eps]
-    (reduce
-      (fn [data episode]
-        (algorithm data start episode)) config (range 1 eps))))
 
 (defn control [algorithm config]
   "Given a RL-Algorithm closure and some starting configuration, it returns a closure.
@@ -81,38 +63,61 @@
            (destroy-return!)))))))
 
 ;; ========= Utils =========
+
+(defn conf
+  "Configuration format used for the algorithms"
+  ([gamma]
+   (conf gamma 0.0))
+  ([gamma alpha]
+   (conf gamma alpha 0.0))
+  ([gamma alpha lambda]
+   (assoc empty-data :gamma gamma
+                     :alpha alpha
+                     :lambda lambda)))
+
 (defn action-mean [As]
+  "Means the number of actions"
   (let [sum (reduce (fn [p [_ v]] (+ p v)) 0 As)]
     (/ sum (count As))))
 
 (defn total-reward [chain]
+  "Sums up all the rewards within a Markov Chain"
   (reduce #(+ %1 (:reward %2)) 0.0 chain))
 
-(defn discount [chain γ]
-  (map-indexed (fn [idx sample]
-                 (* (:reward sample) (Math/pow γ idx))) chain))
+(defn Gt [chain]
+  "Calculates the expected reward for a chain of given `Samples`"
+  (consume
+    (fn [sample rem]
+      (->> rem
+           (total-reward)
+           (assoc sample :reward))) chain))
 
-(defn Gt [chain γ]
-  (consume (fn [sample rem]
-             (let [discounted (reduce + (discount rem γ))]
-               (assoc sample :reward discounted))) chain))
+(defn trajectory [policy
+                  action
+                  reward
+                  transition]
+  "Function that returns a lazy episode generating function.
+  The function can create an indefinite sequence of discounted `Sample`s."
+  (fn [data start episode]
+    (s/unfold
+      (fn [[S idx]]
+        (let [A (policy S (action S) data episode)
+              R (* (reward S A) (Math/pow (:gamma data) idx))
+              S' (transition S A)]
+          (t/tuple (->Sample S A R) (t/tuple S' (inc idx))))) (t/tuple start 0))))
 
-(defn lazy-traj [policy
-                 action-f
-                 reward-f
-                 transition-f]
-  (fn [data start eps-count]
-    (let [S start
-          A (policy S (action-f S) data eps-count)
-          R (reward-f S A)]
-      (iterate (fn [sample]
-                 (let [S' (transition-f (:state sample)
-                                        (:action sample))
-                       A' (policy S' (action-f S') data eps-count)
-                       R' (reward-f S' A')]
-                   (->Sample S' A' R'))) (->Sample S A R)))))
+(defn every-visit-inc
+  "Function that increments the count of some observed action `A` each time it is
+  seen in a Markov Chain or provided directly"
+  ([data chain]
+   (reduce (fn [n-data sample]
+             (update-in n-data [:counts (:state sample) (:action sample)]
+                        #((or-else inc 1) %))) data chain))
+  ([data S A]
+   (update-in data [:counts S A] #((or-else inc 1) %))))
 
 (defn Q
+  "Looks up the Q-Value of a state-action pair"
   ([data SA]
    ((or-else identity 0)
      (get-in data [:q-values (:state SA) (:action SA)])))
@@ -121,20 +126,13 @@
      (get-in data [:q-values S A]))))
 
 (defn C
+  "Looks up the count of a state-action pair"
   ([data SA]
    ((or-else identity 0)
      (get-in data [:counts (:state SA) (:action SA)])))
   ([data S A]
    ((or-else identity 0)
      (get-in data [:counts S A]))))
-
-(defn every-visit-inc
-  ([data chain]
-   (reduce (fn [n-data sample]
-             (update-in n-data [:counts (:state sample) (:action sample)]
-                        #((or-else inc 1) %))) data chain))
-  ([data S A]
-   (update-in data [:counts S A] #((or-else inc 1) %))))
 
 (defn greedy-by-min [As]
   "Given an action-reward representation `{:action1 :reward :action2 :reward ..}`,
@@ -146,122 +144,92 @@
    it chooses the action with the largest expected reward"
   (-> (max-by val As) (keys) (first)))
 
-(defn- simple-eval [policy-eval eps-count]
-  (fn [[new-data S]]
-    (policy-eval new-data S eps-count)))
-
-(defn- echo-eval [channel policy-eval eps-count]
-  (fn [[S prev-data]]
-    (let [[S' new-data] (policy-eval S prev-data eps-count)
-          _ (async/go (async/>! channel new-data))]
-      (t/tuple S' new-data))))
-
-(defn- bootstrap-policy [channel policy]
-  (fn [S As data eps-count]
-    (let [A (policy S As data eps-count)
-          _ (async/go (async/>! channel (->Pair S A)))]
-      A)))
-
-(defn- bootstrap-eval
-  ([policy-eval terminal? f]
-   (fn [data start eps-count]
-     (let [[new-data _] (apply-while (fn [[_ S]] (not (terminal? S)))
-                                     (simple-eval policy-eval eps-count)
-                                     (t/tuple data start))]
-       (f new-data))))
-  ([channel policy-eval terminal? f]
-   (fn [data start eps-count]
-     (let [[new-data _] (apply-while (fn [[_ S]] (not (terminal? S)))
-                                     (echo-eval channel policy-eval eps-count)
-                                     (t/tuple data start))]
-       (f new-data)))))
-
+(defn- evaluate
+  "Evaluates one episode of a given RL-algorithm.
+  It can be given an addition endofunction, which is applied to the intermediate Q-values
+  after each episode."
+  ([algorithm terminal?]
+   (evaluate algorithm terminal? identity))
+  ([algorithm terminal? endo]
+   (fn [data state episode]
+     (if (terminal? state)
+       data
+       (let [[n-data n-init] (algorithm data state episode)]
+         (recur (endo n-data) n-init episode))))))
 
 ;; ========= Policies =========
 
-(defn- ε-policy [ε find-opt f]
-  "Generic function for ε-based policies.
-  Accepts a probability ε, a function for finding the greedy action and a mapping function `f`, which
-  allows an additional transformation of the probability ε. `f` is a binary function with parameters ε and the
-  current episode count"
-  (fn [S As data eps-count]
-    (if (contains? (:q-values data) S)
-      (let [Qs (:q-values data)
-            nε (f ε eps-count)
-            P-greedy (+ (/ nε (count As)) (- 1 ε))
-            A-greedy (find-opt (get Qs S))
-            rest (filter #(not (= A-greedy %)) As)]
-        (if (> (rand) P-greedy)
-          (rand-nth rest)
-          A-greedy))
+(defn- ε-greedy [ε argmax]
+  "Concrete implementation of the e-greedy stochastic policy"
+  (fn [S As data]
+    (if-let [Q-sa (get-in data [:q-values S])]
+      (let [p-random (/ ε (.count As))
+            p-greedy (+ (- 1.0 ε) p-random)
+            greedy-A (argmax Q-sa)]
+        (->> As
+             (map #(if (= greedy-A %) p-greedy p-random))
+             (choose-dist As)))
       (rand-nth As))))
 
-(defn ε-greedy
-  "Given a probability ε, between [0, 1], it chooses with probability ε
-  the greedy action from the Q-Values and with 1 - ε an exploratory action.
-  It can accept an additional function, which states what the greedy action should be.
-  It can accept an additional channel, where it writes the current state and chosen action"
-  ([ε]
-   (ε-greedy ε greedy-by-max))
-  ([ε find-greedily]
-   (ε-policy ε find-greedily (fn [ε-in _] ε-in)))
-  ([ε find-greedily channel]
-   (let [policy (ε-greedy ε find-greedily)]
-     (bootstrap-policy channel policy))))
+(defn- ε-variant [f argmax]
+  "A helper function for creating memoized variants of the ε-greedy policy.
+  Here, epsilon itself is somehow calculated by `f` in relation to the current episode.
+  Each calculation gets memoized for faster repeated use."
+  (let [epsilons (memoize (fn [episode] (f episode)))]
+    (fn [S As data episode]
+      (-> episode
+          (epsilons)                                        ;; lookup or calculate epsilon
+          (ε-greedy argmax)                                 ;; create policy
+          (apply [S As data])))))                           ;; apply policy
 
-(defn GLIE-ε-greedy
-  "Similar behaviour to `ε-greedy`, however it reduces ε after each episode with 1/k, where k is the current episode count"
-  ([ε]
-   (GLIE-ε-greedy ε greedy-by-max))
-  ([ε find-opt]
-   (ε-policy ε find-opt
-             (fn [ε-in k]
-               (let [count (if (zero? k) 1 k)]
-                 (* ε-in (/ 1 count))))))
-  ([ε find-opt channel]
-   (let [policy (GLIE-ε-greedy ε find-opt)]
-     (bootstrap-policy channel policy))))
+(defn eps-greedy
+  "A stochastic policy, where given a probability ε between [0, 1]
+  and a function `argmax` for finding the greediest action for some state,
+  the agent will choose an exploratory action with a normally distributed
+  P(ε) and the greedy action with P(1 - ε). If no `argmax` function is provided,
+  it defaults to finding the action with `largest` Q-value"
+  ([epsilon]
+   (eps-greedy epsilon greedy-by-max))
+  ([epsilon argmax]
+   (fn [S As data _]
+     (-> epsilon                                            ;; take epsilon
+         (ε-greedy argmax)                                  ;; create policy
+         (apply [S As data])))))                            ;; apply policy
 
-(defn GLIE-ε-episode
-  "Similar behaviour to `ε-greedy`, however ε is always preset to 1/k, where k is the current episode count"
-  ([find-greedily]
-   (ε-policy 0.0 find-greedily (fn [_ k]
-                                 (/ 1 k))))
-  ([channel
-    find-greedily]
-   (let [policy (GLIE-ε-episode find-greedily)]
-     (bootstrap-policy channel policy))))
+(defn GLIE-eps-greedy
+  "An ε-greedy policy, where ε gets reduced with 1/k after each episode.
+  k is the current episode count. (ε = ε * 1/k)"
+  ([epsilon]
+   (GLIE-eps-greedy epsilon greedy-by-max))
+  ([epsilon argmax]
+   (ε-variant #(* epsilon (/ 1.0 %)) argmax)))
 
-(defn ε-balanced
-  "Chooses exploratory actions randomly"
-  ([S As data eps-count]
-   (rand-nth As))
-  ([channel]
-   (bootstrap-policy channel ε-balanced)))
+(defn eps-episode
+  "An ε-greedy policy, where ε is always preset to 1/k.
+  k is the current episode count (ε = 1/k)"
+  ([]
+   (eps-episode greedy-by-max))
+  ([argmax]
+   (ε-variant #(/ 1.0 %) argmax)))
 
-;; ========= Aliases =========
-
-(def eps-balanced ε-balanced)
-
-(def eps-greedy ε-greedy)
-
-(def GLIE-eps-greedy GLIE-ε-greedy)
-
-(def GLIE-eps-epsiode GLIE-ε-episode)
+(defn eps-balanced
+  "A policy, which chooses actions randomly"
+  [_ As _ _] (rand-nth As))
 
 (defn greedy
-  ([find-greedily]
+  "A policy, which given a function `argmax` for finding the greediest action for some state,
+  always returns this action given that one exists; chooses randomly otherwise"
+  ([]
+   (greedy greedy-by-max))
+  ([argmax]
    (fn [S As data _]
-     (if-let [known-As (get-in data [:q-values S])]
-       (find-greedily known-As)
-       (rand-nth As))))
-  ([channel
-    find-greedily]
-   (let [policy (greedy find-greedily)]
-     (bootstrap-policy channel policy))))
+     (if-let [Q-sa (get-in data [:q-values S])]
+       (argmax Q-sa)
+       (rand-nth As)))))
 
 ;; ============ Monte Carlo ============
-(defn monte-carlo-update [data sample]
+
+(defn- Q-monte-carlo [data sample]
   (let [{S     :state
          A     :action
          Gt-SA :reward} sample
@@ -269,17 +237,20 @@
         N-SA (C data S A)]
     (assoc-in data [:q-values S A] (+ Q-SA (* (/ 1 N-SA) (- Gt-SA Q-SA))))))
 
-(defn monte-carlo-eval [policy
-                        action-f
-                        reward-f
-                        transition-f
-                        terminal?]
-  (fn [data start eps-count]
-    (let [chain-from (lazy-traj policy action-f reward-f transition-f)
-          markov-chain (take-while+ #(not (terminal? (:state %))) (chain-from data start eps-count))
-          Gt-R (Gt markov-chain (:gamma data))
-          data-counted (every-visit-inc data markov-chain)]
-      (t/tuple (reduce monte-carlo-update data-counted Gt-R) start))))
+(defn monte-carlo-update [data markov-chain]
+  (reduce Q-monte-carlo (every-visit-inc data markov-chain) markov-chain))
+
+(defn- monte-carlo-eval [policy
+                         action
+                         reward
+                         transition
+                         terminal?]
+  (let [gen-episode (trajectory policy action reward transition)]
+    (fn [data S episode]
+      (->> (gen-episode data S episode)                     ;; lazy generator
+           (take-while+ #(not (terminal? (:state %))))      ;; generate an episode
+           (Gt)                                             ;; calculate expected reward
+           (monte-carlo-update data)))))                    ;; update Q-values
 
 (defn monte-carlo [policy
                    action-f
@@ -289,211 +260,143 @@
   "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
  it returns a closure. The closure will, given a start state, start data and current episode count,
  applies Monte Carlo and return the learned Q-Values"
-  (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
-    (bootstrap-eval mc-eval
-                    (fn [_] true)
-                    identity)))
-
-(defn monte-carlo<- [channel
-                     policy
-                     action-f
-                     reward-f
-                     transition-f
-                     terminal?]
-  "Analogous to `monte-carlo`. It accepts an additional channel, where it writes its intermediate Q-Values"
-  (let [mc-eval (monte-carlo-eval policy action-f reward-f transition-f terminal?)]
-    (bootstrap-eval channel
-                    mc-eval
-                    (fn [_] true)
-                    identity)))
+  (monte-carlo-eval policy action-f reward-f transition-f terminal?))
 
 ;; ========= SARSA(1) =========
-(defn sarsa-update [S A R S' A' data]
+
+(defn- Q-sarsa-1 [data S A R S' A']
   (let [alpha (:alpha data)
         gamma (:gamma data)
         Q-SA (Q data S A)
         Q-S'A' (Q data S' A')]
-    (assoc-in data [:q-values S A] (+ Q-SA (* alpha (+ R (- (* gamma Q-S'A') Q-SA)))))))
+    (+ Q-SA (* alpha (+ R (- (* gamma Q-S'A') Q-SA))))))
 
-(defn sarsa-1-eval [policy
-                    action-f
-                    reward-f
-                    transition-f]
-  (fn [data SA eps-count]
+(defn- sarsa-1-eval [policy
+                     action
+                     reward
+                     transition]
+  (fn [data pair episode]
     (let [{S :state
-           A :action} SA
-          R (reward-f S A)
-          S' (transition-f S A)
-          A' (policy S' (action-f S') data eps-count)]
-      (t/tuple (sarsa-update S A R S' A' data) (->Pair S' A')))))
+           A :action} pair
+          R (reward S A)
+          S' (transition S A)
+          A' (policy S' (action S') data episode)]
+      (-> data
+          (assoc-in [:q-values S A] (Q-sarsa-1 data S A R S' A')) ;; update choice
+          (t/tuple (->Pair S' A'))))))                      ;; return new data and next pair
 
 (defn sarsa-1 [policy
-               action-f
-               reward-f
-               transition-f
+               action
+               reward
+               transition
                terminal?]
   "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
-  it returns a closure. The closure will, given a start state, start data and current episode count,
-  applies SARSA-1 and returns the learned Q-Values"
-  (let [sarsa-eval (sarsa-1-eval policy action-f reward-f transition-f)]
-    (fn [data S eps-count]
-      (let [A (policy S (action-f S) data eps-count)
-            evaluator (bootstrap-eval sarsa-eval
-                                      #(terminal? (:state %))
-                                      identity)]
-        (evaluator data (->Pair S A) eps-count)))))
+    it returns a closure. The closure will, given a start state, start data and current episode count,
+    applies SARSA-1 and returns the learned Q-Values"
+  (fn [data S episode]
+    (let [A (policy S (action S) data episode)]
+      (-> policy
+          (sarsa-1-eval action reward transition)
+          (evaluate #(terminal? (:state %)))
+          (apply [data (->Pair S A) episode])))))
 
-(defn sarsa-1<- [channel
-                 policy
-                 action-f
-                 reward-f
-                 transition-f
-                 terminal?]
-  "Analogous to `sarsa-1`. It accepts an additional channel, where it writes its intermediate Q-Values"
-  (let [sarsa-evl (sarsa-1-eval policy action-f reward-f transition-f)]
-    (bootstrap-eval channel
-                    sarsa-evl
-                    #(terminal? (:state %))
-                    identity)))
 
 ;;  ========= SARSA(λ) =========
-(defn reset-eligibilities [data]
+(defn- reset-eligibilities [data]
   (assoc data :counts {}))
 
-(defn td-error [S A R S' A' data]
+(defn- td-error [S A R S' A' data]
   (let [γ (:gamma data)
         Q-S'A' (Q data S' A')
         Q-SA (Q data S A)]
     (+ R (- (* γ Q-S'A') Q-SA))))
 
-(defn Q-sarsa-λ [data δ]
+(defn- Q-sarsa-λ [data δ]
   (let [α (:alpha data)]
     (merge-with
       #(merge-with (fn [R E] (+ R (* α δ E))) %1 %2) (:q-values data) (:counts data))))
 
-(defn E-sarsa-λ [data]
+(defn- E-sarsa-λ [data]
   (let [γ (:gamma data)
         λ (:lambda data)]
     (map-vals
       #(map-vals (fn [E] (* γ λ E)) %) (:counts data))))
 
-(defn sarsa-λ-update [data err]
+(defn- sarsa-λ-update [data δ]
   (-> data
-      (assoc :q-values (Q-sarsa-λ data err))                ;; blame all Qs based on their eligibility and current error
-      (assoc :counts (E-sarsa-λ data))))                    ;; decay all eligibilities
+      (assoc :q-values (Q-sarsa-λ data δ))
+      (assoc :counts (E-sarsa-λ data))))
 
-(defn sarsa-λ-eval [policy
-                    action-f
-                    reward-f
-                    transition-f]
-  (fn [data SA eps-count]
+(defn- sarsa-λ-eval [policy
+                     action
+                     reward
+                     transition]
+  (fn [data pair episode]
     (let [{S :state
-           A :action} SA
-          R (reward-f S A)
-          S' (transition-f S A)
-          A' (policy S' (action-f S') data eps-count)
+           A :action} pair
+          R (reward S A)
+          S' (transition S A)
+          A' (policy S' (action S') data episode)
           δ (td-error S A R S' A' data)]
       (-> data
           (update-in [:q-values S A] #((or-else identity 0) %)) ;; init S A in Qs
           (every-visit-inc S A)                             ;; increment eligibility
-          (sarsa-λ-update δ)                                ;; blame and decay
+          (sarsa-λ-update δ)                                ;; blame choices and decay eligibilities
           (t/tuple (->Pair S' A'))))))                      ;; return new data and next pair
 
 (defn sarsa-λ [policy
-               action-f
-               reward-f
-               transition-f
+               action
+               reward
+               transition
                terminal?]
   "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
   it returns a closure. The closure will, given a start state, start data and current episode count,
   applies SARSA-λ and returns the learned Q-Values"
-  (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
-    (fn [data S eps-count]
-      (let [A (policy S (action-f S) data eps-count)
-            evaluator (bootstrap-eval λ-eval
-                                      #(terminal? (:state %))
-                                      reset-eligibilities)]
-        (evaluator data (->Pair S A) eps-count)))))
-
-(defn sarsa-λ<- [channel
-                 policy
-                 action-f
-                 reward-f
-                 transition-f
-                 terminal?]
-  "Analogous to `sarsa-λ`. It accepts an additional channel, where it writes its intermediate Q-Values"
-  (let [λ-eval (sarsa-λ-eval policy action-f reward-f transition-f)]
-    (fn [data S eps-count]
-      (let [A (policy S (action-f S) data eps-count)
-            evaluator (bootstrap-eval channel
-                                      λ-eval
-                                      #(terminal? (:state %))
-                                      reset-eligibilities)]
-        (evaluator data (->Pair S A) eps-count)))))
+  (fn [data S episode]
+    (let [A (policy S (action S) data episode)]
+      (-> policy
+          (sarsa-λ-eval action reward transition)
+          (evaluate #(terminal? (:state %)) reset-eligibilities)
+          (apply [data (->Pair S A) episode])))))
 
 ;; ========= Q-Learning =========
 
-(defn q-learning-eval [policy
-                       greedy-policy
-                       action-f
-                       reward-f
-                       transition-f]
-  (fn [data S eps-count]
-    (let [A (policy S (action-f S) data eps-count)
-          R (reward-f S A)
-          S' (transition-f S A)
-          A' (greedy-policy S' (action-f S') data eps-count)]
-      (t/tuple (sarsa-update S A R S' A' data) S'))))
+(defn- q-learning-eval [policy
+                        greedy-policy
+                        action
+                        reward
+                        transition]
+  (fn [data S episode]
+    (let [A (policy S (action S) data episode)
+          R (reward S A)
+          S' (transition S A)
+          A' (greedy-policy S' (action S') data episode)]
+      (-> data
+          (assoc-in [:q-values S A] (Q-sarsa-1 data S A R S' A')) ;; Q-learning is a half greedy Sarsa-1
+          (t/tuple S')))))
 
-
-(defn q-learning [find-greedily
-                  policy
-                  action-f
-                  reward-f
-                  transition-f
+(defn q-learning [policy
+                  greedy-policy
+                  action
+                  reward
+                  transition
                   terminal?]
   "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
   it returns a closure. The closure will, given a start state, start data and current episode count,
   applies Q-Learning and returns the learned Q-Values "
-  (let [greedy-policy (greedy find-greedily)
-        q-eval (q-learning-eval policy greedy-policy action-f reward-f transition-f)]
-    (bootstrap-eval q-eval
-                    terminal?
-                    identity)))
+  (-> policy
+      (q-learning-eval greedy-policy action reward transition)
+      (evaluate terminal?)))
 
-(defn q-learning<- [channel
-                    find-greedily
-                    policy
-                    action-f
-                    reward-f
-                    transition-f
-                    terminal?]
-  "Analogous to `q-learning`. It accepts an additional channel, where it writes its intermediate Q-Values"
-  (let [greedy-policy (greedy find-greedily)
-        q-eval (q-learning-eval policy greedy-policy action-f reward-f transition-f)]
-    (bootstrap-eval channel
-                    q-eval
-                    terminal?
-                    identity)))
-
-(defn sarsa-max
+(defn sarsa-max [policy
+                 action
+                 reward
+                 transition
+                 terminal?]
   "Given a behaviour policy and the action, reward, transition and terminal functions,
-  (alternatively also a channel)
   it returns a closure. The closure will, given a starting state, starting data and episode
   count, apply Q-learning with the predefined max greedy policy"
-  ([policy
-    action-f
-    reward-f
-    transition-f
-    terminal?]
-   (q-learning greedy-by-max policy action-f reward-f transition-f terminal?))
-  ([channel
-    policy
-    action-f
-    reward-f
-    transition-f
-    terminal?]
-   (q-learning<- channel greedy-by-max policy action-f reward-f transition-f terminal?)))
+  (q-learning policy (greedy greedy-by-max) action reward transition terminal?))
 
 ;; ========= Learned path =========
 
@@ -502,10 +405,10 @@
 ;; To avoid the initial pitfall of circulating between states that greedily reference each other,
 ;; we start to exclude the actions that lead to them the moment we encounter a cycle.
 
-(defn cycled? [path S]
+(defn- cycled? [path S]
   (some #(= (:state %) S) path))
 
-(defn go-back [find-greedily data path excluded]
+(defn- go-back [argmax data path excluded]
   (let [culprit (last path)
         As (get-in data [:q-values (:state culprit)])
         visited (get excluded (:state culprit))
@@ -513,16 +416,16 @@
                    (fn [A _]
                      (not (some #(= % A) visited))) As)]
     (if (not (empty? filtered))
-      (let [A (find-greedily filtered)]
+      (let [A (argmax filtered)]
         [(vec (drop-last path))
          (update excluded (:state culprit) #(conj % A))
          (->Pair (:state culprit) A)])
-      (go-back find-greedily
+      (go-back argmax
                data
                (vec (drop-last path))
                (update excluded (:state culprit) #(conj % (:action culprit)))))))
 
-(defn go-greedy [find-greedily trans-f reward-f terminal?]
+(defn- go-greedy [argmax transition reward terminal?]
   (fn [start data]
     (loop [excluded {}
            path (t/tuple)
@@ -530,15 +433,15 @@
       (if (terminal? S)
         path
         (if (cycled? path S)
-          (let [[rem-path n-excluded pair] (go-back find-greedily data path excluded)
-                R (reward-f (:state pair) (:action pair))
-                S' (trans-f (:state pair) (:action pair))]
+          (let [[rem-path n-excluded pair] (go-back argmax data path excluded)
+                R (reward (:state pair) (:action pair))
+                S' (transition (:state pair) (:action pair))]
             (recur n-excluded
                    (conj rem-path (->Sample (:state pair) (:action pair) R))
                    S'))
-          (let [A (-> data (get-in [:q-values S]) (find-greedily))
-                R (reward-f S A)
-                S' (trans-f S A)]
+          (let [A (-> data (get-in [:q-values S]) (argmax))
+                R (reward S A)
+                S' (transition S A)]
             (recur (update excluded S #(conj % A))
                    (conj path (->Sample S A R))
                    S')))))))
@@ -548,7 +451,7 @@
   Given the transtion, reward and terminal functions, it returns a closure.
   The closure will, given a starting state and some learned Q-Values, calculate the greedy path through
   the Q-Values and return the most `optimal` Markov Chain it could derive from the Q-Values."
-  ([transition-f reward-f terminal?]
-   (compute-path greedy-by-max transition-f reward-f terminal?))
-  ([find-greedily transition-f reward-f terminal?]
-   (go-greedy find-greedily transition-f reward-f terminal?)))
+  ([transition reward terminal?]
+   (compute-path greedy-by-max transition reward terminal?))
+  ([argmax transition reward terminal?]
+   (go-greedy argmax transition reward terminal?)))
