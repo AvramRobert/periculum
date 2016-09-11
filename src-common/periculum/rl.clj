@@ -107,14 +107,22 @@
           (t/tuple (->Sample S A R) (t/tuple S' (inc idx))))) (t/tuple start 0))))
 
 (defn every-visit-inc
-  "Function that increments the count of some observed action `A` each time it is
-  seen in a Markov Chain or provided directly"
+  "Function that increments the count of some observed state-action pair `S, A` each time they
+  are observed within a Markov Chain or provided directly"
   ([data chain]
    (reduce (fn [n-data sample]
              (update-in n-data [:counts (:state sample) (:action sample)]
                         #((or-else inc 1) %))) data chain))
   ([data S A]
    (update-in data [:counts S A] #((or-else inc 1) %))))
+
+(defn first-visit-inc [data chain]
+  "Function that increments the count of some observed state-action pair `S, A` each time they
+  are observed within a Markov Chain or provided directly"
+  (->> chain
+       (map #(->Pair (:state %) (:action %)))
+       (distinct)
+       (every-visit-inc data)))
 
 (defn Q
   "Looks up the Q-Value of a state-action pair"
@@ -197,7 +205,7 @@
          (apply [S As data])))))                            ;; apply policy
 
 (defn GLIE-eps-greedy
-  "An ε-greedy policy, where ε gets reduced with 1/k after each episode.
+  "An ε-greedy policy, where ε gets reduced by 1/k after each episode.
   k is the current episode count. (ε = ε * 1/k)"
   ([epsilon]
    (GLIE-eps-greedy epsilon greedy-by-max))

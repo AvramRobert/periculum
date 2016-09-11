@@ -8,7 +8,7 @@
 ;; An example usage of the Reinforcement Learning API.
 
 ;; The problem solved here is that of the triangle path.
-;; Given a triangle path similar to the one below (see `world`),
+;; Given a triangle of weighted cells similar to the one below (see `world`),
 ;; find the most minimal path from top to bottom, whereby the value of
 ;; each path is the sum of all the visited cells.
 ;; The single rule is that you are allowed to go only left down or right down
