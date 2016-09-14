@@ -124,6 +124,10 @@
        (distinct)
        (every-visit-inc data)))
 
+(defn- reset-eligibilities [data]
+  "Resets the accumulated eligibilities"
+  (assoc data :counts {}))
+
 (defn Q
   "Looks up the Q-Value of a state-action pair"
   ([data SA]
@@ -141,6 +145,10 @@
   ([data S A]
    ((or-else identity 0)
      (get-in data [:counts S A]))))
+
+(defn E-λ [data f]
+  "Updates the eligibilities traces"
+  (map-vals #(map-vals f %) (:counts data)))
 
 (defn greedy-by-min [As]
   "Given an action-reward representation `{:action1 :reward :action2 :reward ..}`,
@@ -310,9 +318,6 @@
 
 
 ;;  ========= SARSA(λ) =========
-(defn- reset-eligibilities [data]
-  (assoc data :counts {}))
-
 (defn- td-error [S A R S' A' data]
   (let [γ (:gamma data)
         Q-S'A' (Q data S' A')
@@ -327,8 +332,7 @@
 (defn- E-sarsa-λ [data]
   (let [γ (:gamma data)
         λ (:lambda data)]
-    (map-vals
-      #(map-vals (fn [E] (* γ λ E)) %) (:counts data))))
+    (E-λ data (fn [E] (* γ λ E)))))
 
 (defn- sarsa-λ-update [data δ]
   (-> data
@@ -391,7 +395,7 @@
                   terminal?]
   "Given a behaviour and greedy policy and the action, reward, transition and terminal functions,
   it returns a closure. The closure will, given a start state, start data and current episode count,
-  applies Q-Learning and returns the learned Q-Values "
+  applies Q-Learning and returns the learned Q-Values"
   (-> policy
       (q-learning-eval greedy-policy action reward transition)
       (evaluate terminal?)))
@@ -403,8 +407,65 @@
                  terminal?]
   "Given a behaviour policy and the action, reward, transition and terminal functions,
   it returns a closure. The closure will, given a starting state, starting data and episode
-  count, apply Q-learning with the predefined max greedy policy"
+  count, apply Q-learning with the greedy policy of choosing the action with the largest Q-value"
   (q-learning policy (greedy greedy-by-max) action reward transition terminal?))
+
+
+;; Watkins' Q(λ) (Sutton & Barto p. 163 Draft)
+
+(defn- E-q-λ [data A' A*]
+  (if (= A' A*) (E-sarsa-λ data)
+                (E-λ data (fn [_] 0))))
+
+(defn- q-λ-update [data A' A* δ]
+  (-> data
+      (assoc :q-values (Q-sarsa-λ data δ))
+      (assoc :counts (E-q-λ data A' A*))))
+
+(defn- q-λ-eval [policy
+                 greedy-policy
+                 action
+                 reward
+                 transition]
+  (fn [data pair episode]
+    (let [{S :state
+           A :action} pair
+          R (reward S A)
+          S' (transition S A)
+          A' (policy S' (action S') data episode)
+          A* (greedy-policy S' (action S') data episode)
+          δ (td-error S A R S' A* data)]
+      (-> data
+          (update-in [:q-values S A] #((or-else identity 0) %))
+          (every-visit-inc S A)
+          (q-λ-update A' A* δ)
+          (t/tuple (->Pair S' A'))))))
+
+(defn q-λ [policy
+           greedy-policy
+           action
+           reward
+           transition
+           terminal?]
+  "Given a behaviour and a greedy policy, the action, reward, transition and terminal functions,
+  it returns a closure. The closure will, given a starting state, starting data and episode
+  count, apply Watkins' Q(λ) and return the Q-Values"
+  (fn [data S episode]
+    (let [A (policy S (action S) data episode)]
+      (-> policy
+          (q-λ-eval greedy-policy action reward transition)
+          (evaluate #(terminal? (:state %)) reset-eligibilities)
+          (apply [data (->Pair S A) episode])))))
+
+(defn q-λ-max [policy
+               action
+               reward
+               transition
+               terminal?]
+  "Given a behaviour policy and the action, reward, transition and terminal functions,
+ it returns a closure. The closure will, given a starting state, starting data and episode
+ count, apply Watkins' Q(λ) with the greedy policy of choosing the action with the largest Q-value"
+  (q-λ policy (greedy greedy-by-max) action reward transition terminal?))
 
 ;; ========= Learned path =========
 
