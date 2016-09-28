@@ -72,9 +72,9 @@
                        (->Pos 0 1) {:left 2}
                        (->Pos 0 2) {:right 3}
                        }}]
-    (is (= (C data (->Pos 0 0) :left) 1))
-    (is (= (C data (->Pos 0 1) :right) 0))
-    (is (= (C data (->Pos 1 1) :right) 0))))
+    (is (= (N data (->Pos 0 0) :left) 1))
+    (is (= (N data (->Pos 0 1) :right) 0))
+    (is (= (N data (->Pos 1 1) :right) 0))))
 
 
 (defn grouped-map [values init f]

@@ -4,11 +4,12 @@
             [flatland.useful.seq :as s])
   (:use [periculum.more]))
 
-(def empty-data {:q-values {}
-                 :counts   {}
+(def empty-data {:q-values (t/hash-map)
+                 :counts   (t/hash-map)
                  :gamma    0.0
                  :alpha    0.0
-                 :lambda   0.0})
+                 :lambda   0.0
+                 :model    (t/hash-map)})
 
 (defrecord Pair [state action])
 (defrecord Sample [state action reward])
@@ -117,8 +118,8 @@
    (update-in data [:counts S A] #((or-else inc 1) %))))
 
 (defn first-visit-inc [data chain]
-  "Function that increments the count of some observed state-action pair `S, A` each time they
-  are observed within a Markov Chain or provided directly"
+  "Function that increments the count of some observed state-action pair `S, A` only the first time they
+  are observed within a Markov Chain"
   (->> chain
        (map #(->Pair (:state %) (:action %)))
        (distinct)
@@ -137,7 +138,7 @@
    ((or-else identity 0)
      (get-in data [:q-values S A]))))
 
-(defn C
+(defn N
   "Looks up the count of a state-action pair"
   ([data SA]
    ((or-else identity 0)
@@ -250,7 +251,7 @@
          A     :action
          Gt-SA :reward} sample
         Q-SA (Q data S A)
-        N-SA (C data S A)]
+        N-SA (N data S A)]
     (assoc-in data [:q-values S A] (+ Q-SA (* (/ 1 N-SA) (- Gt-SA Q-SA))))))
 
 (defn monte-carlo-update [data markov-chain]
@@ -411,7 +412,7 @@
   (q-learning policy (greedy greedy-by-max) action reward transition terminal?))
 
 
-;; Watkins' Q(λ) (Sutton & Barto p. 163 Draft)
+;; ========= Watkins' Q(λ) =========
 
 (defn- E-q-λ [data A' A*]
   (if (= A' A*) (E-sarsa-λ data)
@@ -466,6 +467,58 @@
  it returns a closure. The closure will, given a starting state, starting data and episode
  count, apply Watkins' Q(λ) with the greedy policy of choosing the action with the largest Q-value"
   (q-λ policy (greedy greedy-by-max) action reward transition terminal?))
+
+;; Model-based RL
+
+;; ========= Dyna-Q =========
+
+(defn- think [data n argmax]
+  (reduce
+    (fn [ndata _]
+      (let [S (-> ndata (:q-values) (keys) (rand-nth))
+            A (-> ndata (:q-values) (get S) (keys) (rand-nth))
+            {R :reward S' :next} (get-in ndata [:model S A])
+            A' (argmax ndata S')]
+        (assoc-in data [:q-values S A] (Q-sarsa-1 ndata S A R S' A')))) data (range 0 n)))
+
+(defn- dyna-q-eval [thinking-time
+                    policy
+                    greedy-policy
+                    action
+                    reward
+                    transition]
+  (fn [data S episode]
+    (let [A (policy S (action S) data episode)
+          R (reward S A)
+          S' (transition S A)
+          A' (greedy-policy S' (action S') data episode)
+          argmax (fn [d state] (greedy-policy state (action state) d episode))]
+      (-> data
+          (assoc-in [:q-values S A] (Q-sarsa-1 data S A R S' A'))
+          (assoc-in [:model S A] (t/hash-map :reward R :next S'))
+          (think thinking-time argmax)
+          (t/tuple S')))))
+
+(defn dyna-q [thinking-time
+              policy
+              greedy-policy
+              action
+              reward
+              transition
+              terminal?]
+  (-> thinking-time
+      (dyna-q-eval policy greedy-policy action reward transition)
+      (evaluate terminal?)))
+
+(defn dyna-q-max [thinking-time]
+  (fn [policy
+       action
+       reward
+       transition
+       terminal?]
+    (dyna-q thinking-time policy (greedy greedy-by-max) action reward transition terminal?)))
+
+;; FIXME: Perhaps implement MCTS
 
 ;; ========= Learned path =========
 

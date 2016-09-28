@@ -59,7 +59,7 @@
   "Given a word, a number of individuals per generation and number of generations,
   it runs a genetic algorithm and tries to find out what word has been input.
   This returns a tuple of the word, and the generation it has been found at."
-  (let [elite# 10
+  (let [elite# (/ indv# 2)
         fitness (evaluator word)
         init (take indv# (population word))
         genesis (evolve init fitness mutate cross perfect?)]

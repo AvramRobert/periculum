@@ -162,9 +162,11 @@
     :reward => function
     :transition => function
     :terminal => predicate
+    + :echo => channel (for explicit path display)
     :plots [{:title => string
              :schedule => predicate
              :method => keyword
+             + :expect => channel (only when mse/episode is used)
             }
            ...
             ]

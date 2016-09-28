@@ -5,13 +5,16 @@
   (:require [clojure.core.match :refer [match]])
   (:require [play-clj.math :as gmath]))
 
+;; Idea: I could represent the reward function differently.
+;; Instead of punishing him for hitting something with some negative reward,
+;; I could instead simplify the reward to a binary representation.
+;; Award him a reward of 0, if at some point he had hit something,
+;; and a reward of 1 if he followed a trajectory, which didn't harm him at all.
+;; Or similarly, punish him with -1 if he followed some path that hurt him, 1 (or 2) otherwise
+
 (defrecord Action [velocity
                    time
                    orientation])
-
-(defrecord State-Complete [position
-                           velocity
-                           orientation])
 
 (defrecord State [position
                   previous-action])
@@ -25,10 +28,10 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
-(def Rewards {:tic   0
-              :solid -10
-              :end   15})
-              
+(def Rewards {:tic   0   ;; change to -0.01 for ideal temporal punishment
+              :solid -1
+              :end   2})
+
 
 (def primitive-actions {:stand      (->Action 0 1 [0 0])
                         :walk-left  (->Action 1 1 [-1 0])
@@ -37,7 +40,7 @@
                         :run-right  (->Action 2 1 [1 0])
                         :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
                         :fall       (->Action G 1 [0 -1])})
-                        
+
 
 (def all-actions [:stand
                   :walk-left
@@ -89,7 +92,7 @@
       (pos (->> nx (Math/ceil) (Math/round))
            (->> ny (Math/ceil) (Math/round))))))
 
-(defn +++ [ t inter]
+(defn +++ [t inter]
   (map #(inter %) (range 0.0 (+ 1.0 t) t)))
 
 (defn endpoint [pos actions]
@@ -138,7 +141,7 @@
                                                          acts)
           :else (let [non-solid (take-while+ not-solid? interpolated)]
                   (tuples/tuple (inc t) (into visited non-solid))))))))
-          
+
 
 (defn ascend [lookup]
   (fn [start other-acts]
@@ -255,12 +258,12 @@
 (defn- transition-com [world actions terminal?]
   (let [Ω (omega world actions)]
     (fn [state action]
-      (let [[_ path] (Ω state action)]
-        (if-let [end (find-some terminal? path)]
-          end
-          (if (some #(out? (:position %)) path)
-            state
-            (last path)))))))
+      (let [[_ path] (Ω state action)
+            end (find-some terminal? path)]
+        (cond
+          (some? end) end
+          (some #(out? (:position %)) path) state
+          :else (last path))))))
 
 (defn reward
   "Given a platformer world and the terminal function, it returns a closure.
