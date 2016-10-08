@@ -1,6 +1,5 @@
 (ns periculum.more
-  (:require [incanter.stats :as is]
-            [clj-tuple :as t]))
+  (:require [clj-tuple :as t]))
 
 (def empty-vec
   (t/tuple))
@@ -59,11 +58,6 @@
         (assoc nmap k v)
         nmap)) {} map))
 
-(defn intersect-with [f map1 map2]
-  (map-keyed-vals
-    (fn [k v]
-      ((or-else #(f v %) v) (get map2 k))) map1))
-
 (defn take-while+ [pred coll]
   (loop [acc empty-vec
          [h & tail] coll]
@@ -110,6 +104,15 @@
                      (t/tuple pk pv))) [:none 0.0])
          (first))))
 
+(defn desc-by [key coll]
+  (sort-by key #(- %2 %1) coll))
+
+(defn asc-by [key coll]
+  (sort-by key #(- %1 %2) coll))
+
+(defn fuse [& colls]
+  (vec (flatten (apply t/tuple colls))))
+
 (defn- spy [f item]
   (do
     (f item)
@@ -120,19 +123,3 @@
 
 (defn spyr [f item]
   (spy f item))
-
-(comment
-  ;; Mean
-  (defn extract [& s]
-    (->> s
-         (str)
-         (re-seq #": .*? ")
-         (map #(Double/parseDouble (clojure.string/replace % ": " "")))))
-
-  (defn do-mean [& s]
-    ((comp is/mean extract) s))
-
-  (defn print-count [coll]
-    (do
-      (println (str "\"About: " (count coll) " times\""))
-      coll)))

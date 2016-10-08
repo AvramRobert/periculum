@@ -1,6 +1,8 @@
 (ns periculum.examples.genetic_word_finder
   (:use periculum.genetic)
-  (:require [clj-tuple :as t]))
+  (:require [clj-tuple :as t]
+            [flatland.useful.seq :as f]
+            [periculum.more :as m]))
 
 ;; An example usage of the Genetic API.
 
@@ -9,8 +11,6 @@
 ;; find out what word has been input.
 ;; This is done by using the input word to construct the fitness function,
 ;; which in turn evaluates each attempted individual.
-
-;; Test
 
 (defn char-stream [start]
   (iterate #(-> % (int) (inc) (char)) start))
@@ -22,32 +22,25 @@
 (defn babel [length]
   (vec (map (fn [_] (rand-nth alphabet)) (range 0 length))))
 
-(defn- mutate [evaluatee]
-  (let [ridx (if (empty? (:errors evaluatee))
-               (rand-int (count (:individual evaluatee)))
-               (rand-nth (:errors evaluatee)))]
+(defn- mutate [genome]
+  (let [ridx (rand-int (count genome))]
     (map-indexed
       (fn [idx letter]
-        (if (= idx ridx) (rand-nth alphabet) letter)) (:individual evaluatee))))
+        (if (= idx ridx) (rand-nth alphabet) letter)) genome)))
 
-(defn- cross [evaluatee1 evaluatee2]
-  (let [section (rand-int (count (:individual evaluatee1)))
-        fuse (fn [amount from to] (into (drop amount (:individual to)) (take amount (:individual from))))]
+(defn- cross [genome1 genome2]
+  (let [section (rand-int (count genome1))]
     (t/tuple
-      (fuse section evaluatee1 evaluatee2)
-      (fuse section evaluatee2 evaluatee1))))
+      (m/fuse (take section genome1) (drop section genome2))
+      (m/fuse (take section genome2) (drop section genome1)))))
 
 (defn- evaluator [word]
-  (fn [evaluatee]
-    (second
-      (reduce
-        (fn [[idx ev] letter]
-          (if (= letter (nth (:individual ev) idx))
-            (t/tuple (inc idx) ev)
-            (t/tuple (inc idx)
-                     (-> ev
-                         (map-score inc)
-                         (map-error #(conj % idx)))))) (t/tuple 0 evaluatee) word))))
+  (fn [genome]
+    (reduce
+      (fn [score [idx letter]]
+        (if (= (nth genome idx) letter)
+          score
+          (dec score))) 0 (f/indexed word))))
 
 (defn- perfect? [eval] (= (:score eval) 0))
 
@@ -56,13 +49,11 @@
         start (babel letter#)]
     (iterate (fn [_] (babel letter#)) start)))
 
-
-(defn run-word-finder [word indv# gen#]
+(defn run-word-finder [word indv# gen# elite#]
   "Given a word, a number of individuals per generation and number of generations,
   it runs a genetic algorithm and tries to find out what word has been input.
   This returns a tuple of the word, and the generation it has been found at."
-  (let [elite# (/ indv# 2)
-        fitness (evaluator word)
+  (let [fitness (evaluator word)
         init (take indv# (population word))
-        genesis (evolve init fitness mutate cross perfect?)]
+        genesis (genetically init fitness mutate cross perfect?)]
     (genesis gen# elite#)))

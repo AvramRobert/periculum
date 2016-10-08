@@ -37,10 +37,12 @@
   (fn [start eps]
     (async/thread
       (println "Executing")
-      (reduce
-        (fn [data episode]
-          (when (zero? (mod episode 100)) (println episode))
-          (algorithm data start episode)) config (range 1 eps)))))
+      (let [result (reduce
+                     (fn [data episode]
+                       (when (zero? (mod episode 100)) (println episode))
+                       (algorithm data start episode)) config (range 1 eps))]
+        (println "DONE")
+        result))))
 
 (defn control->
   "Given a RL-Algorithm closure, some starting configuration and a number of channels, it returns a closure.
@@ -107,6 +109,19 @@
               S' (transition S A)]
           (t/tuple (->Sample S A R) (t/tuple S' (inc idx))))) (t/tuple start 0))))
 
+(defn rollout [policy
+               action
+               reward
+               transition
+               terminal?]
+  (fn [data start episode]
+    (let [roll (s/unfold (fn [S]
+                           (let [A (policy S (action S) data episode)
+                                 R (reward S A)
+                                 S' (transition S A)]
+                             (t/tuple (->Sample S A R) S'))) start)]
+      (take-while #(not (terminal? (:state %))) roll))))
+
 (defn every-visit-inc
   "Function that increments the count of some observed state-action pair `S, A` each time they
   are observed within a Markov Chain or provided directly"
@@ -170,9 +185,9 @@
   ([algorithm terminal? endo]
    (fn [data state episode]
      (if (terminal? state)
-       data
+       (endo data)
        (let [[n-data n-init] (algorithm data state episode)]
-         (recur (endo n-data) n-init episode))))))
+         (recur n-data n-init episode))))))
 
 ;; ========= Policies =========
 
@@ -265,7 +280,7 @@
   (let [gen-episode (trajectory policy action reward transition)]
     (fn [data S episode]
       (->> (gen-episode data S episode)                     ;; lazy generator
-           (take-while+ #(not (terminal? (:state %))))      ;; generate an episode
+           (take-while #(not (terminal? (:state %))))       ;; generate an episode
            (Gt)                                             ;; calculate expected reward
            (monte-carlo-update data)))))                    ;; update Q-values
 
@@ -281,7 +296,7 @@
 
 ;; ========= SARSA(1) =========
 
-(defn- Q-sarsa-1 [data S A R S' A']
+(defn Q-sarsa-1 [data S A R S' A']
   (let [alpha (:alpha data)
         gamma (:gamma data)
         Q-SA (Q data S A)
@@ -518,7 +533,35 @@
        terminal?]
     (dyna-q thinking-time policy (greedy greedy-by-max) action reward transition terminal?)))
 
-;; FIXME: Perhaps implement MCTS
+;; ========= Dyna-γ (My own creation) =========
+
+(defn- dyna-γ-eval [argmax
+                    policy
+                    action
+                    reward
+                    transition]
+  (fn [data S episode]
+    (let [A (policy S (action S) data episode)
+          R (reward S A)
+          S' (transition S A)
+          A' (argmax S (action S) data episode)]
+      (-> data
+          (assoc-in [:q-values S A] (Q-sarsa-1 data S A R S' A'))
+          ;;(think-f S')
+          (t/tuple S')))))
+
+(defn dyna-γ [think-q argmax]
+  (fn [policy
+       action
+       reward
+       transition
+       terminal?]
+    (-> argmax
+        (dyna-γ-eval policy action reward transition)
+        (evaluate terminal? think-q))))
+
+(defn dyna-γ-max [think-q]
+  (dyna-γ think-q (greedy greedy-by-max)))
 
 ;; ========= Learned path =========
 

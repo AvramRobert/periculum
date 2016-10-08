@@ -1,111 +1,97 @@
 (ns periculum.genetic
   (:require [periculum.more :as m]
             [clj-tuple :as t]
-            [clojure.core.async :as async])
+            [clojure.core.async])
   (:import (java.util Random)))
 
 (comment
   "Evaluation
-  { :attempt _
-    :score   _
-    :errors  _ }")
+  { :individual  _
+    :score       _ }")
 
-(defrecord Eval [individual score errors])
+(defrecord Eval [individual score])
 
-(defn map-error [eval f]
-  (update-in eval [:errors] f))
-
-(defn map-score [eval f]
-  (update-in eval [:score] f))
-
-(defn map-indv [eval f]
-  (update-in eval [:individual] f))
-
-(defn lift-eval [item] (->Eval item 0 (t/tuple)))
+(defn lift-eval
+  ([item] (lift-eval item 0))
+  ([item score] (->Eval item score)))
 
 (defn- non-det [a f g]
   "Applies function `f` or `g` to `a` non-deterministically."
   (let [rnd (new Random)]
     (if (.nextBoolean rnd) (f a) (g a))))
 
-(defn- repopulate [mutate cross amount elite]
-  "Creates a new population, based on some pre-existing elite, by
-  appling mutation and crossover non-deterministically until the given
+(defn genesis [mutate crossover]
+  "Given a mutation and crossover function, it returns a function
+  that can recreate a population, based on some pre-existing elite, by
+  applying crossover first, and then mutation until a given `amount`
+  of individuals have been created. This is the standard genetic reproduction."
+  (fn [amount parents]
+    (loop [newborn parents]
+      (if (>= (count newborn) amount)
+        newborn
+        (let [[p1 p2] (t/tuple (rand-nth parents) (rand-nth parents))
+              [c1 c2] (crossover p1 p2)
+              [m1 m2] (t/tuple (mutate c1) (mutate c2))]
+          (recur (conj newborn c1 c2 m1 m2)))))))
+
+(defn b-genesis [mutate cross]
+  "Given a mutation and crossover function, it returns a function
+  that can recreate a population, based on some pre-existing elite, by
+  appling either mutation and crossover non-deterministically until a given
   `amount` of individuals have been created."
-  (reduce
-    (fn [civ _]
-      (non-det elite
-               #(into civ (cross (rand-nth %) (rand-nth %)))
-               #(conj civ (mutate (rand-nth %)))))
-    (map :individual elite) (range 0 amount)))
+  (fn [amount population]
+    (reduce
+      (fn [civ _]
+        (non-det population
+                 #(into civ (cross (rand-nth %) (rand-nth %)))
+                 #(conj civ (mutate (rand-nth %))))) population (range 0 amount))))
 
-(defn evolve [init fitness mutate cross perfect?]
-  "A simple function that runs a genetic algorithm.
-  This function essetially receives every meaningful part of a
-  genetic algorithm (i.e. mutation, crossover, fitness etc) as a parameter.
-  Given these, plus a starting population and a way to find the perfect individual,
-  it returns a function, which accepts a number of generations and elites.
-  This function is then applied to run the algorithm.
+(defn evolve
+  "A function that runs an evolutionary algorithm.
+  Every meaningful part of this function is provided as a parameter.
+  It receives a starting population, a fitness function and a repopulation function.
+  Additionally, it may receive a predicate, that is able to find a perfect individual.
+  Given these, it returns a new function, which computes the algorithm given
+  a number of generations and of elites.
 
-  The provided parameters are of the following type:
-    Init: sequence of some `A`
-    Mutation: function of A -> A,
-    Cross: function of (A, A) -> (A, A)
-    Fitness: function of A -> Eval
-    Perfect: function of A -> Boolean"
-
-  (let [indv# (count init)]
-    (fn [gen# elite#]
-      (loop [generation gen#
-             civilization init]
-        (let [fitted (map #(-> % (lift-eval) (fitness)) civilization)
-              best (m/find-some perfect? fitted)]
-          (cond
-            (some? best) (t/tuple (:individual best) (- gen# generation))
-            (> generation 0) (->> fitted
-                                  (sort-by :score)
-                                  (take elite#)
-                                  (repopulate mutate cross indv#)
-                                  (recur (dec generation)))
-            :default (->> fitted
-                          (sort-by :score)
-                          (first))))))))
+  Parameters:
+    population -> starting individuals
+    fitness -> computes the fitness of an individual. It receives an individual and
+               returns a number representing that individual's fitness (or score).
+               Larger numbers are associated with better fitness.
+    repopulate -> recreates the population. It takes an amount of individuals
+                  and the selected elite and must return a new collection of individuals.
 
 
-(defn repopulate2 [mutate cross amount elite]
-  (reduce
-    (fn [population _]
-      (let [i1 (rand-nth elite)
-            i2 (rand-nth elite)
-            [c1 c2] (cross i1 i2)
-            [m1 m2] (t/tuple (mutate (lift-eval c1)) (mutate (lift-eval c2)))]
-        (conj population c1 c2 m1 m2))) (map :individual elite) (range 0 amount)))
+    Note: `repopulate` abstracts over the type of evolutionary algorithm used.
+    It knows how and which genetic operators to use. It can also
+    do other things, if it is so desired. It must however be pure."
 
-(defn repopulate3 [mutate cross amount elite]
-  (loop [npop (t/tuple)]
-    (if (>= (count npop) amount)
-      npop
-      (let [i1 (rand-nth elite)
-            i2 (rand-nth elite)
-            [c1 c2] (cross i1 i2)
-            [m1 m2] (t/tuple (mutate (lift-eval c1)) (mutate (lift-eval c2)))
-            all (shuffle (t/tuple c1 c2 m1 m2))]
-        (recur (into npop (take (- amount (count npop)) all)))))))
+  ([population fitness repopulate]
+   (evolve population fitness repopulate (fn [_] false)))
+  ([population fitness repopulate perfect?]
+   (let [indv# (count population)]
+     (fn [gen# elite#]
+       (loop [generation gen#
+              individuals population]
+         (let [fitted (map #(lift-eval % (fitness %)) individuals)
+               best (m/find-some perfect? fitted)]
+           (cond
+             (some? best) (t/tuple (- gen# generation) best)
+             (> generation 0) (->> fitted
+                                   (m/desc-by :score)
+                                   (take elite#)
+                                   (map :individual)
+                                   (repopulate indv#)
+                                   (recur (dec generation)))
+             :default (->> fitted
+                           (m/desc-by :score)
+                           (first)
+                           (t/tuple gen#)))))))))
 
-(defn xevolve [init fitness mutate cross perfect?]
-  (let [indv# (count init)]
-    (fn [gen# elite# f]
-      (loop [generation gen#
-             civilization init]
-        (let [fitted (map #(-> % (f) (lift-eval) (fitness)) civilization)
-              best (m/find-some perfect? fitted)]
-          (cond
-            (some? best) (t/tuple best (- gen# generation))
-            (> generation 0) (->> fitted
-                                  (sort-by :score)
-                                  (take elite#)
-                                  (repopulate3 mutate cross indv#)
-                                  (recur (dec generation)))
-            :default (->> fitted
-                          (sort-by :score)
-                          (first))))))))
+
+(defn genetically [population fitness mutate cross perfect?]
+  (evolve population fitness (genesis mutate cross) perfect?))
+
+(defn b-genetically [population fitness mutate cross perfect?]
+  (evolve population fitness (b-genesis mutate cross) perfect?))
