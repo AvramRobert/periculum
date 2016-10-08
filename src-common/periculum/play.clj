@@ -6,7 +6,9 @@
     [periculum.more]
     [periculum.plots]
     [periculum.dsl])
-  (:require [clojure.core.async :as async]))
+  (:require [clojure.core.async :as async]
+            [periculum.ext :as ops]
+            [periculum.genetic :as g]))
 
 (def ^:const local-path "/home/robert/Repositories/periculum/resources/")
 
@@ -35,8 +37,8 @@
                     :platforms [(m-struct 2 (pos 5 3)) (m-struct 2 (pos 8 4))]})
 
 (def world (make-world world-config3))
+(def start (->State (->Pos 1 1) :stand))
 ;(def world (world-from-pixmap (str local-path "level1.png")))
-
 
 (defn- -local-prims [w kvs]
   (let [t? (terminal? w)
@@ -71,6 +73,10 @@
 (defn re-echo [data]
   (async/>!! result-channel data))
 
+(defn -learn-gen [world & kvs]
+  (fn [data]
+    ((apply deflearn (-local-prims world (conj kvs data :data))))))
+
 (defn -learn [world & kvs]
   "Delegates to `deflearn` but presets the primites to those of the platformer MDP"
   (apply deflearn (-local-prims world kvs)))
@@ -78,3 +84,12 @@
 (defn -learn-cont [& kvs]
   "Delegates to `deflearn-cont` but presets the primites to those of the platformer MDP"
   (apply deflearn-cont (-local-prims world kvs)))
+
+(defn run-vf [algorithm data]
+  (fn [indv# gen# elite#]
+    (let [population (map (fn [_] data) (range 0 indv#))
+          fitness (ops/vf-eval start world)
+          mutate (ops/vf-mutate-a 0.5)
+          perfect? #(= (:score %) 2)
+          genesis (g/xevolve population fitness mutate ops/vf-cross-1 perfect?)]
+      (genesis gen# elite# #(async/<!! (algorithm %))))))

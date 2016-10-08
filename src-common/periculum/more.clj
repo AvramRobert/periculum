@@ -1,10 +1,9 @@
 (ns periculum.more
-  (:require [clj-tuple :as tuples]
-            [incanter.stats :as is]
+  (:require [incanter.stats :as is]
             [clj-tuple :as t]))
 
 (def empty-vec
-  (tuples/tuple))
+  (t/tuple))
 
 (defn find-some [p coll]
   (some #(when (p %) %) coll))
@@ -43,6 +42,11 @@
     (fn [m k v]
       (assoc m k (f v))) (t/hash-map) map))
 
+(defn map-keyed-vals [f map]
+  (reduce-kv
+    (fn [m k v]
+      (assoc m k (f k v))) (t/hash-map) map))
+
 (defn map-kv [kf vf map]
   (reduce-kv
     (fn [m k v]
@@ -55,8 +59,13 @@
         (assoc nmap k v)
         nmap)) {} map))
 
+(defn intersect-with [f map1 map2]
+  (map-keyed-vals
+    (fn [k v]
+      ((or-else #(f v %) v) (get map2 k))) map1))
+
 (defn take-while+ [pred coll]
-  (loop [acc (tuples/tuple)
+  (loop [acc empty-vec
          [h & tail] coll]
     (if (pred h)
       (recur (conj acc h) tail)

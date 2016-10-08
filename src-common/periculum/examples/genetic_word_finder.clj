@@ -23,7 +23,9 @@
   (vec (map (fn [_] (rand-nth alphabet)) (range 0 length))))
 
 (defn- mutate [evaluatee]
-  (let [ridx (rand-nth (:errors evaluatee))]
+  (let [ridx (if (empty? (:errors evaluatee))
+               (rand-int (count (:individual evaluatee)))
+               (rand-nth (:errors evaluatee)))]
     (map-indexed
       (fn [idx letter]
         (if (= idx ridx) (rand-nth alphabet) letter)) (:individual evaluatee))))

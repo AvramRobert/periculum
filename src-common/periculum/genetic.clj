@@ -1,6 +1,7 @@
 (ns periculum.genetic
   (:require [periculum.more :as m]
-            [clj-tuple :as t])
+            [clj-tuple :as t]
+            [clojure.core.async :as async])
   (:import (java.util Random)))
 
 (comment
@@ -65,6 +66,45 @@
                                   (sort-by :score)
                                   (take elite#)
                                   (repopulate mutate cross indv#)
+                                  (recur (dec generation)))
+            :default (->> fitted
+                          (sort-by :score)
+                          (first))))))))
+
+
+(defn repopulate2 [mutate cross amount elite]
+  (reduce
+    (fn [population _]
+      (let [i1 (rand-nth elite)
+            i2 (rand-nth elite)
+            [c1 c2] (cross i1 i2)
+            [m1 m2] (t/tuple (mutate (lift-eval c1)) (mutate (lift-eval c2)))]
+        (conj population c1 c2 m1 m2))) (map :individual elite) (range 0 amount)))
+
+(defn repopulate3 [mutate cross amount elite]
+  (loop [npop (t/tuple)]
+    (if (>= (count npop) amount)
+      npop
+      (let [i1 (rand-nth elite)
+            i2 (rand-nth elite)
+            [c1 c2] (cross i1 i2)
+            [m1 m2] (t/tuple (mutate (lift-eval c1)) (mutate (lift-eval c2)))
+            all (shuffle (t/tuple c1 c2 m1 m2))]
+        (recur (into npop (take (- amount (count npop)) all)))))))
+
+(defn xevolve [init fitness mutate cross perfect?]
+  (let [indv# (count init)]
+    (fn [gen# elite# f]
+      (loop [generation gen#
+             civilization init]
+        (let [fitted (map #(-> % (f) (lift-eval) (fitness)) civilization)
+              best (m/find-some perfect? fitted)]
+          (cond
+            (some? best) (t/tuple best (- gen# generation))
+            (> generation 0) (->> fitted
+                                  (sort-by :score)
+                                  (take elite#)
+                                  (repopulate3 mutate cross indv#)
                                   (recur (dec generation)))
             :default (->> fitted
                           (sort-by :score)
