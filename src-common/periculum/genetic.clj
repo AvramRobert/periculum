@@ -9,11 +9,15 @@
   { :individual  _
     :score       _ }")
 
+;; FIXME: Implement roulette and tournament selection
+
 (defrecord Eval [individual score])
 
 (defn lift-eval
   ([item] (lift-eval item 0))
   ([item score] (->Eval item score)))
+
+(defn indv [ev] (:individual ev))
 
 (defn- non-det [a f g]
   "Applies function `f` or `g` to `a` non-deterministically."
@@ -74,14 +78,14 @@
      (fn [gen# elite#]
        (loop [generation gen#
               individuals population]
-         (let [fitted (map #(lift-eval % (fitness %)) individuals)
+         (let [fitted (map #(->Eval % (fitness %)) individuals)
                best (m/find-some perfect? fitted)]
            (cond
              (some? best) (t/tuple (- gen# generation) best)
              (> generation 0) (->> fitted
                                    (m/desc-by :score)
                                    (take elite#)
-                                   (map :individual)
+                                   (map indv)
                                    (repopulate indv#)
                                    (recur (dec generation)))
              :default (->> fitted
@@ -89,6 +93,30 @@
                            (first)
                            (t/tuple gen#)))))))))
 
+
+(defn evolve-w [population fitness repopulate]
+  "A function that runs an evolutionary algorithm.
+  Similar to `evolve`, it evolves by using the same schema, but
+   does not look for a `perfect` individual and also does not
+   return one single individual. It returns the whole evolved population
+   after the specified generations have elapsed."
+  (let [indv# (count population)]
+    (fn [gen# elite#]
+      (loop [generation gen#
+             individuals population]
+        (if (> generation 0)
+          (->> individuals
+               (map #(->Eval % (fitness %)))
+               (m/desc-by :score)
+               (take elite#)
+               (map indv)
+               (repopulate indv#)
+               (recur (dec generation)))
+          (->> individuals
+               (map #(->Eval % (fitness %)))
+               (m/desc-by :score)
+               (take indv#)
+               (map indv)))))))
 
 (defn genetically [population fitness mutate cross perfect?]
   (evolve population fitness (genesis mutate cross) perfect?))

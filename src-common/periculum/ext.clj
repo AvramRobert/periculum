@@ -87,7 +87,7 @@
       0
       (->> genome
            (follow start)
-           (reduce #(+ %1 (:reward %2)) 0.0)))))
+           (rl/total-reward)))))
 
 ;; ========= Planning =========
 
@@ -106,5 +106,4 @@
         (fuse-at X genome2 genome1))
       (t/vector genome1 genome2))))
 
-(defn p-eval [genome]
-  (reduce #(+ %1 (:reward %2)) 0.0 genome))
+(defn p-eval [genome] (rl/total-reward genome))

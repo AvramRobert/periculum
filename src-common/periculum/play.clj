@@ -9,7 +9,8 @@
             [periculum.ext :as ops]
             [periculum.genetic :as g]
             [periculum.rl :as rl]
-            [periculum.domain :as d]))
+            [periculum.domain :as d]
+            [periculum.exports :as e]))
 
 (def ^:const local-path "/home/robert/Repositories/periculum/resources/")
 
@@ -41,31 +42,21 @@
 (def start (->State (->Pos 1 1) :stand))
 ;(def world (world-from-pixmap (str local-path "level1.png")))
 
-(defn- -local-prims [w kvs]
-  (let [t? (terminal? w)
-        add [actions :action
-             (terminal? w) :terminal
-             (reward w t?) :reward
-             (transition w t?) :transition
-             t? :terminal]
-        args ((or-else
-                (fn [_]
-                  add) (conj add (state 1 1 :stand) :start)) (val-of kvs :start))]
-    (into kvs args)))
+(defn- add-locals [world config]
+  (-> config
+      (assoc :action actions)
+      (assoc :reward (reward world (terminal? world)))
+      (assoc :transition (transition world (terminal? world)))
+      (assoc :terminal (terminal? world))
+      (update :start #(if-some [x %] x (state 1 1 :stand)))))
 
 
-(defn recompute [w & kvs]
-  (let [vs (-local-prims w kvs)
-        start (val-of vs :start)
-        optimum (rl/compute-path
-                  (val-of vs :transition)
-                  (val-of vs :reward)
-                  (val-of vs :terminal))
+(defn recompute [world config]
+  (let [locals (add-locals world config)
+        start (start<- locals)
+        optimum (resolver<- locals)
         mem (atom {})]
-    (fn
-      ([]
-       (when (not (empty? @mem))
-         (optimum start @mem)))
+    (fn ([] (when (not-empty? @mem) (optimum start @mem)))
       ([channel]
        (let [data (async/<!! channel)
              _ (swap! mem (fn [_] data))]
@@ -74,86 +65,100 @@
 (defn re-echo [data]
   (async/>!! result-channel data))
 
-(defn learn [world & kvs]
+(defn learn [config]
   "Delegates to `deflearn` but presets the primites to those of the platformer MDP"
-  (apply deflearn (-local-prims world kvs)))
+  (deflearn (add-locals world config)))
 
-(defn learn-cont [& kvs]
+(defn learn-cont [config]
   "Delegates to `deflearn-cont` but presets the primites to those of the platformer MDP"
-  (apply deflearn-cont (-local-prims world kvs)))
+  (deflearn-cont (add-locals world config)))
 
-(defn xgen [algorithm mutate cross]
-  (let [repopulate (g/genesis mutate cross)]
-    (fn [amount population]
-      (->> population
-           (map #(async/<!! (algorithm %)))
-           (repopulate amount)))))
-
-(defn learn-vf [world & kvs]
-  (let [vs (-local-prims world kvs)
-        follow (rl/compute-path
-                 (val-of vs :transition)
-                 (val-of vs :reward)
-                 (val-of vs :terminal))
-        data (rl/conf (val-of vs :gamma)
-                      (val-of vs :alpha)
-                      (val-of vs :lambda))
-        start (val-of vs :start)
-        algorithm (fn [ndata] ((apply deflearn (conj vs ndata :data))))]
-    (fn [indv# gen# elite#]
-      (let [population (map (fn [_] data) (range 0 indv#))
-            mutate (ops/vf-mutate 0.5)
-            cross (ops/vf-cross-rnd follow)
-            fitness (ops/vf-eval start follow)
-            perfect? #(= (:score %) 2.0)
-            genesis (g/evolve population fitness (xgen algorithm mutate cross) perfect?)]
-        (genesis gen# elite#)))))
-
-(defn gen-traj [policy
-                action
-                reward
-                transition
-                terminal?]
-  (let [rollout (rl/rollout policy action reward transition terminal?)
-        roll (fn [data S] (rollout data S nil))]
-    (fn [data S indv# gen# elite#]
-      (let [population (map (fn [_] (roll data S)) (range 0 indv#))
-            mutate (ops/p-mutate data roll)
-            genesis (g/genetically population ops/p-eval mutate ops/p-cross #(>= (:score %) 2.0))]
+(defn- genetic-traj [config]
+  (let [rollout (rollout<- config)
+        roll (fn [data S] (rollout data S nil))
+        indv# (population<- config)
+        gen# (generations<- config)
+        elite# (generations<- config)]
+    (fn [data S]
+      (let [genesis (g/genetically
+                      (repeat indv# (roll data S))
+                      ops/p-eval
+                      (ops/p-mutate data roll)
+                      ops/p-cross
+                      #(>= (:score %) 2.0))]
         (second (genesis gen# elite#))))))
 
-(defn q-up [argmax
-            action
-            transition]
-  (fn [data sample]
-    (let [{S :state
-           A :action
-           R :reward} sample
-          S' (transition S A)
-          A' (argmax S' (action S') data nil)]
-      (assoc-in data [:q-values S A] (rl/Q-sarsa-1 data S A R S' A')))))
+(defn- q-up [config]
+  (let [argmax (rl/greedy rl/greedy-by-max)
+        action (action<- config)
+        transition (transition<- config)]
+    (fn [data sample]
+      (let [{S :state
+             A :action
+             R :reward} sample
+            S' (transition S A)
+            A' (argmax S' (action S') data nil)]
+        (assoc-in data [:q-values S A] (rl/Q-sarsa-1 data S A R S' A'))))))
 
-(defn learn-plan [world & kvs]
-  (let [vs (-local-prims world kvs)
-        τ (gen-traj rl/eps-balanced
-                    (val-of vs :action)
-                    (val-of vs :reward)
-                    (val-of vs :transition)
-                    (val-of vs :terminal))
-        update (q-up (rl/greedy rl/greedy-by-max)
-                     (val-of vs :action)
-                     (val-of vs :transition))]
-    (fn [indv# gen# elite#]
-      (letfn [(evolve [data]
-                (->> elite#
-                     (τ data (-> data :q-values keys rand-nth) indv# gen#)
-                     (:individual)
-                     (reduce #(update %1 %2) data)))]
-        ((apply deflearn (conj vs (rl/dyna-γ-max evolve) :algorithm)))))))
 
-(defn traj-opt [indv# gen# elite#]
-  (let [term (d/terminal? world)
-        trans (d/transition world term)
-        rew (d/reward world term)
-        f (gen-traj rl/eps-balanced d/actions rew trans term)]
-    (f (rl/conf 1.0) start indv# gen# elite#)))
+(defn- dyna [config]
+  (let [τ (genetic-traj config)
+        update (q-up config)
+        evolve (fn [data]
+                 (->> (τ data (-> data :q-values keys rand-nth))
+                      (g/indv)
+                      (reduce #(update %1 %2) data)))]
+    (rl/dyna-γ-max evolve)))
+
+(defn magrl [world config]
+  "Multi-Agent Genetic Reinforcement Learning"
+  (let [locals (add-locals world config)
+        follow (resolver<- locals)
+        algorithm (algorithm<- locals)
+        data (data<- locals)
+        start (start<- locals)
+        episodes (episodes<- config)
+        fitness (ops/vf-eval start follow)
+        mutate (ops/vf-mutate 0.5)
+        cross (ops/vf-cross-rnd follow)
+        repopulate (g/genesis mutate cross)
+        fittest #(max-by fitness %)
+        dispatches (dispatches<- config)
+        evolve #((g/evolve-w % fitness repopulate) (generations<- locals) (elites<- config))
+        run! (rl/control->gen algorithm data evolve fittest dispatches)]
+    (fn [] (run! start episodes))))
+
+(defn geprl [world config]
+  "Genetically Planned Reinforcement Learing"
+  (let [locals (add-locals world config)]
+    (->> locals
+         (dyna)
+         (assoc locals :algorithm)
+         (deflearn))))
+
+
+(defn magrl-test [world config]
+  (let [locals (add-locals world config)
+        follow #((resolver<- locals) start %)
+        channel (async/chan 256)
+        magrl! (magrl world (assoc locals :dispatches {:channel  channel
+                                                       :schedule #(= (mod % 2) 0)}))
+        exp (e/exp "magrl" 2)
+        decoder (e/path-decode follow #(>= % 1.0))]
+    (fn []
+      (do
+        (e/listen! channel exp decoder)
+        (magrl!)))))
+
+(defn geprl-test [world config]
+  (let [locals (dissoc (add-locals world config) :algorithm)
+        follow #((resolver<- locals) start %)
+        channel (async/chan 256)
+        geprl! (geprl world (assoc locals :dispatches {:channel  channel
+                                                       :schedule #(= (mod % 2) 0)}))
+        exp (e/exp "geprl" 1)
+        decoder (e/path-decode follow #(>= % 1.0))]
+    (fn []
+      (do
+        (e/listen! channel exp decoder)
+        (geprl!)))))

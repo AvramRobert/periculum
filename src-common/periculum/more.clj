@@ -104,6 +104,8 @@
                      (t/tuple pk pv))) [:none 0.0])
          (first))))
 
+(defn not-empty? [coll] (not (empty? coll)))
+
 (defn desc-by [key coll]
   (sort-by key #(- %2 %1) coll))
 

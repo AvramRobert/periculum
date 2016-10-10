@@ -1,7 +1,9 @@
 (ns periculum.rl
   (:require [clojure.core.async :as async]
             [clj-tuple :as t]
-            [flatland.useful.seq :as s])
+            [flatland.useful.seq :as s]
+            [periculum.genetic :as g]
+            [periculum.more :as m])
   (:use [periculum.more]))
 
 (def empty-data {:q-values (t/hash-map)
@@ -21,49 +23,84 @@
           _ (async/close! chan)]
       (recur (rest channels)))))
 
-(defn- dispatch! [data episode dispatches]
-  (foreach
-    (fn [[channel p]]
-      (when (p episode)
-        (async/go
-          (async/>! channel {:episode episode
-                             :data    data}))))
-    dispatches))
+(defn- send! [data episode channel]
+  "Sends `data` asynchronously through the channel"
+  (async/go
+    (async/>! channel {:cpu     (System/nanoTime)
+                       :episode episode
+                       :data    data})))
+(defn- dispatch!
+  "For every dispatch, it sends `data` according to its provided
+  schedule. It can additionally accept an endomorphic function `f`,
+   that is called on `data` and is evaluated only by need."
+  ([data episode dispatches]
+   (dispatch! identity data episode dispatches))
+  ([f data episode dispatches]
+   (when (not-empty? dispatches)
+     (foreach
+       (fn [[channel p]]
+         (when (p episode) (send! (f data) episode channel))) dispatches))))
 
-(defn control [algorithm config]
-  "Given a RL-Algorithm closure and some starting configuration, it returns a closure.
-  The closure will, given a starting state and a number of episodes, run the algorithm
-  for that amount of episodes in a separate thread"
-  (fn [start eps]
-    (async/thread
-      (println "Executing")
-      (let [result (reduce
-                     (fn [data episode]
-                       (when (zero? (mod episode 100)) (println episode))
-                       (algorithm data start episode)) config (range 1 eps))]
-        (println "DONE")
-        result))))
+(defn- show-episode! [episode interval]
+  (when (zero? (mod episode interval)) (println episode)))
 
 (defn control->
   "Given a RL-Algorithm closure, some starting configuration and a number of channels, it returns a closure.
   The closure will, given a starting state and a number of episodes, run the algorithm
   for that amount of episodes in a separate thread and echo the intermediate Q-Values in the provided channels."
   ([algorithm config]
-   (control algorithm config))
+   (control-> algorithm config (t/tuple)))
   ([algorithm config dispatches]
    (fn [start eps]
      (async/thread
-       (letfn [(destroy-return! [result-chan]
+       (println "Executing")
+       (letfn [(destroy-return! [passing]
                  (close-all! (map first dispatches))
-                 result-chan)]
+                 passing)]
          (->>
            (range 1 eps)
            (reduce
              (fn [data episode]
-               (when (zero? (mod episode 100)) (println episode))
+               (show-episode! episode 100)
                (dispatch! data episode dispatches)
                (algorithm data start episode)) config)
-           (destroy-return!)))))))
+           (destroy-return!)
+           (spyr (fn [_] (println "Done")))))))))
+
+(defn control->gen
+  "Very similar to `control->`, with the addition, that it can accept
+  an evolutionary algorithm for optimising a population of RL-agents.
+  The configuration also additional necessitates an `interval`, stating
+  at which episode the optimisiation should occur, and a `population`,
+  stating how many agents should run in parallel.
+
+  `evolve` is the evolution function, accepting all Q-values and
+  returning an evolved population of Q-values.
+  `fittest` finds the fittest of the agents and returns him"
+  ([algorithm config evolve fittest]
+   (control->gen algorithm config evolve fittest))
+  ([algorithm config evolve fittest dispatches]
+   (fn [start eps]
+     (async/thread
+       (println "Executing")
+       (letfn [(genesis [episode civ]
+                 (if (and (> episode 1)
+                          (zero? (mod (:interval config) episode)))
+                   (evolve civ) civ))
+               (destroy-return! [passing]
+                 (close-all! (map first dispatches))
+                 passing)]
+         (->>
+           (range 1 eps)
+           (reduce
+             (fn [p episode]
+               (show-episode! episode 100)
+               (dispatch! fittest p episode dispatches)
+               (->> p (pmap #(algorithm % start episode)) (genesis episode)))
+             (repeat (:population config) config))
+           (fittest)
+           (destroy-return!)
+           (spyr (fn [_] (println "Done")))))))))
 
 ;; ========= Utils =========
 
@@ -77,6 +114,20 @@
    (assoc empty-data :gamma gamma
                      :alpha alpha
                      :lambda lambda)))
+
+(defn econf
+  ([gamma population interval generations]
+   (econf gamma 0.0 0.0 population interval generations))
+  ([gamma alpha population interval generations]
+   (econf gamma alpha 0.0 population interval generations))
+  ([gamma alpha lambda population interval generations]
+   (assoc empty-data :gamma gamma
+                     :alpha alpha
+                     :lambda lambda
+                     :population population
+                     :interval interval
+                     :generations generations)))
+
 
 (defn action-mean [As]
   "Means the number of actions"

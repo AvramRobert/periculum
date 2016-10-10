@@ -21,7 +21,9 @@
                  [net.mikera/imagez "0.10.0"]
                  [incanter "1.5.7"]
                  [criterium "0.4.4"]
-                 [primitive-math "0.1.5"]]
+                 [primitive-math "0.1.5"]
+                 [semantic-csv "0.1.0"]
+                 [org.clojure/data.csv "0.1.3"]]
 
 
   :source-paths ["src" "src-common"]

@@ -33,9 +33,7 @@
   (loop [gathered (tuples/tuple)]
     (if-let [data (async/<!! channel)]
       (recur (conj gathered data))
-      (do
-        (println "Done")
-        (map f gathered)))))
+      (map f gathered))))
 
 (defn monitor [channel f & gs]
   (async/thread

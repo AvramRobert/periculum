@@ -8,146 +8,187 @@
   (:require
     [clojure.core.async :as async]
     [play-clj.core :refer [shape, color, color!]]
-    [clj-tuple :as tuples]))
+    [clj-tuple :as t]))
 
 
-(defn make-sample [reward-f]
+(defn- to-sample [reward-f]
   (fn [path]
-    (map #(->Sample (:state %) (:action %) (reward-f (:state %) (:action %))) path)))
+    (map #(->Sample (:state %)
+                    (:action %)
+                    (reward-f (:state %) (:action %))) path)))
+
+(defn extract [config key message]
+  (let [item (get config key)]
+    (assert item (str "Please specify: " message))
+    item))
 
 (defn val-of [kvs k]
   (->> kvs (drop-while #(not= % k)) second))
 
-(defn- exp-start [kvs]
-  (val-of kvs :start))
+(defn start<- [config]
+  (extract config :start "A starting state"))
 
-(defn- with-mdp? [kvs]
-  (every?
-    (fn [action]
-      (some #(= % action) kvs))
-    [:start
-     :terminal
-     :action
-     :reward
-     :transition]))
+(defn policy<- [config]
+  (extract config :policy "A policy"))
 
-(defn- primitives [kvs
-                   action
-                   reward
-                   transition
-                   terminal]
-  (let [start (exp-start kvs)
-        policy (val-of kvs :policy)]
-    (assert policy "Please specify a policy")
-    (assert start "Please specify a starting state")
-    {:start      start
-     :policy     policy
-     :action     action
-     :reward     reward
-     :transition transition
-     :terminal   terminal}))
+(defn action<- [config]
+  (extract config :action "An action function"))
 
+(defn transition<- [config]
+  (extract config :transition "A transition function"))
 
-(defn- exp-primitives [kvs]
-  (assert (with-mdp? kvs) "Please provide the necessary primitives for your MDP")
-  (primitives kvs
-              (val-of kvs :action)
-              (val-of kvs :reward)
-              (val-of kvs :transition)
-              (val-of kvs :terminal)))
+(defn reward<- [config]
+  (extract config :reward "A reward function"))
 
-(defn- exp-algorithm [kvs]
-  (let [prims (exp-primitives kvs)
-        algo (val-of kvs :algorithm)]
-    (assert algo "Please specify an algorithm")
-    (algo (:policy prims)
-          (:action prims)
-          (:reward prims)
-          (:transition prims)
-          (:terminal prims))))
+(defn terminal<- [config]
+  (extract config :terminal "A terminal function"))
 
-(defn from-data [kvs]
-  (val-of kvs :data))
+(defn episodes<- [config]
+  (extract config :episodes "A number of episodes"))
 
-(defn- exp-data [kvs]
-  (if-let [data (from-data kvs)]
+(defn echo<- [config]
+  (extract config :echo "An echo channel"))
+
+(defn plots<- [config]
+  (extract config :plots "Plotting descriptions"))
+
+(defn plot-type<- [plot]
+  (extract plot :method "A plot type or method"))
+
+(defn plot-schedule<- [plot]
+  (extract plot :schedule "A plotting schedule"))
+
+(defn plot-bridge<- [plot]
+  (extract plot :expect "A bridge plotting channel for MSE"))
+
+(defn gamma<- [config]
+  (extract config :gamma "A discount factor gamma"))
+
+(defn alpha<- [config]
+  (extract config :alpha "A step-size alpha"))
+
+(defn lambda<- [config]                                     ;; Not checked currently
+  (:lambda config))
+
+(defn population<- [config]                                 ;; Not checked currently
+  (:population config))
+
+(defn interval<- [config]                                   ;; Not checked currently
+  (:interval config))
+
+(defn generations<- [config]                                ;; Not checked currently
+  (:generations config))
+
+(defn elites<- [config]                                     ;; Not checked currently
+  (:elites config))
+
+(defn dispatches<- [config]                                 ;; Not checked currently
+  (if-let [ds (:dispatches config)]
+    (->> ds
+         (t/tuple)
+         (flatten)
+         (map #(t/tuple (:channel %) (:schedule %))))
+    (t/tuple)))
+
+(defn- plotted? [config]
+  (some? (:plots config)))
+
+(defn- echoed? [config]
+  (some? (:echo config)))
+
+(defn- dispatched? [config]
+  (some? (:dispatches config)))
+
+(defn- parameters<- [config]
+  (t/tuple
+    (policy<- config)
+    (action<- config)
+    (reward<- config)
+    (transition<- config)
+    (terminal<- config)))
+
+(defn primitives<- [config]
+  {:start      (start<- config)
+   :policy     (policy<- config)
+   :action     (action<- config)
+   :reward     (reward<- config)
+   :transition (transition<- config)
+   :terminal   (terminal<- config)})
+
+(defn algorithm<- [config]
+  (-> (extract config :algorithm "An appropriate algorithm")
+      (apply (parameters<- config))))
+
+(defn rollout<- [config]
+  (apply rollout (parameters<- config)))
+
+(defn resolver<- [config]
+  (compute-path (transition<- config)
+                (reward<- config)
+                (terminal<- config)))
+
+(defn data<- [config]
+  (if-let [data (:data config)]
     data
-    (let [gamma (val-of kvs :gamma)
-          alpha (val-of kvs :alpha)
-          lambda (val-of kvs :lambda)]
-      (assert gamma "Please specify a discount factor gamma")
-      (apply conf (filter #(not (nil? %)) (tuples/tuple gamma alpha lambda))))))
+    (econf
+      (gamma<- config)
+      (alpha<- config)
+      (lambda<- config)
+      (population<- config)
+      (interval<- config)
+      (generations<- config))))
 
 (defn- deref-plot [plot prims]
   (let [title ((or-else identity "") (:title plot))
+        plot-type (plot-type<- plot)
         greedily (capture-greedy (:start prims)
                                  (:transition prims)
                                  (:reward prims)
                                  (:terminal prims))]
-    (assert plot "Please specify a plot method")
-    (case (:method plot)
+
+    (case plot-type
       :reward/episode [greedily (reward-per-episode title)]
       :reward/action [greedily (reward-per-action title)]
       :steps/episode [greedily (steps-per-episode title)]
       :value/state [identity (value-per-state title)]
       :mse/episode (do
-                     (assert (:expect plot) "Please specify an expectation channel")
                      [greedily
                       (fn [data]
-                        (let [expect-channel (:expect plot)
-                              with-rew (make-sample (:reward prims))
+                        (let [expect-channel (plot-bridge<- plot)
+                              with-rew (to-sample (:reward prims))
                               expectation (async/<!! expect-channel)
                               pf (mse-per-epsiode (with-rew expectation) title)]
                           (pf data)))])
       (println "Unknown method"))))
 
-(defn- plotted? [kvs]
-  (some? (val-of kvs :plots)))
-
-(defn- echoed? [kvs]
-  (val-of kvs :echo))
-
-(defn- on-echo [kvs]
+(defn- on-echo [config]
   (fn [channel]
-    (if (echoed? kvs)
-      (let [prims (exp-primitives kvs)
-            echo-channel (val-of kvs :echo)
-            start (:start prims)
-            path (compute-path (:transition prims)
-                               (:reward prims)
-                               (:terminal prims))
-            propagate (fn [p]
-                        (async/go (async/>! echo-channel p))
-                        channel)
-            value (async/<!! channel)
+    (if (echoed? config)
+      (let [echo (echo<- config)
+            start (start<- config)
+            follow (resolver<- config)
+            propagate #(async/go (async/>! echo %))
+            qs (async/<!! channel)
             ret (async/chan)]
         (do
-          (->> value
-               (path start)
-               propagate)
-          (async/put! ret value)
+          (->> qs (follow start) (propagate))
+          (async/put! ret qs)
           ret))
       channel)))
 
-(defn- exp-plots [plots kvs]
-  (let [prims (exp-primitives kvs)]
-    (map
-      (fn [plot]
-        (let [[f plotf] (deref-plot plot prims)
-              schedule (:schedule plot)
-              monitor! (fn [channel] (monitor channel f plotf))]
-          (tuples/hash-map
-            :monitor monitor!
-            :schedule schedule))) plots)))
+(defn- on-plot [config]
+  (let [prims (primitives<- config)]
+    (->> config
+         (plots<-)
+         (t/tuple)
+         (flatten)
+         (map (fn [plot]
+                (let [[f plotf] (deref-plot plot prims)]
+                  (t/hash-map
+                    :monitor #(monitor % f plotf)
+                    :schedule (plot-schedule<- plot))))))))
 
-(defn- with-plots [kvs]
-  (-> kvs
-      (val-of :plots)
-      (tuples/tuple)
-      (flatten)
-      (exp-plots kvs)))
-
-(defn deflearn [& kvs]
+(defn deflearn [config]
   "Small DSL for working with the RL and plotting APIs
    Parameters:
     :world => vector records
@@ -171,60 +212,53 @@
            ...
             ]
   "
-  (let [data (exp-data kvs)
-        eps (val-of kvs :episodes)
-        start (exp-start kvs)
-        echo (on-echo kvs)
-        algorithm (exp-algorithm kvs)]
-    (assert eps "Please specify a number of episodes")
-    (if (plotted? kvs)
-      (letfn [(apply-vk [[itm f]] (f itm))
+  (let [data (data<- config)
+        eps (episodes<- config)
+        start (start<- config)
+        echo (on-echo config)
+        algorithm (algorithm<- config)]
+    (if (plotted? config)
+      (letfn [(k->v [[f itm]] (f itm))
               (run! [{schedules :schedules
                       monitors  :monitors}]
                 (fn []
                   (let [channels (take (count schedules) (repeatedly async/chan))
-                        ds (zipmap channels schedules)
-                        ms (zipmap channels monitors)
-                        f (control-> algorithm data (map apply-vk ds))
+                        ds (zipmap schedules channels)
+                        ms (zipmap monitors channels)
+                        f (control-> algorithm data (into (map k->v ds)
+                                                          (dispatches<- config)))
                         g (comp echo f)]
                     (do
-                      (foreach apply-vk ms)
+                      (foreach k->v ms)
                       (g start eps)))))]
-        (->> kvs
-             (with-plots)
+        (->> config
+             (on-plot)
              (map #(update % :schedule (fn [s]
                                          (fn [channel]
-                                           (tuples/tuple channel s)))))
+                                           (t/tuple channel s)))))
              (reduce
                (fn [map {schedule :schedule
                          monitor  :monitor}]
                  (-> map
                      (update :schedules #(conj % schedule))
                      (update :monitors #(conj % monitor))))
-               (tuples/hash-map
-                 :schedules (tuples/tuple)
-                 :monitors (tuples/tuple)))
+               (t/hash-map
+                 :schedules (t/tuple)
+                 :monitors (t/tuple)))
              (run!)))
       (fn []
-        (let [f (control-> algorithm data)
+        (let [f (control-> algorithm data (dispatches<- config))
               run! (comp echo f)]
           (run! start eps))))))
 
-(defn deflearn-cont [& kvs]
+(defn deflearn-cont [config]
   "Lazy continous application of `deflearn`.
    After every invocation, it returns a function, which
    when called, feeds the previously generated q-values in the algorithm
    and runs it again, continuing the learning process.
    This then returns another function which does the same thing.
    "
-  (let [attach (fn [data]
-                 (if (from-data kvs)
-                   (conj (drop 2 kvs) data :data)
-                   (conj kvs data :data)))
-        learning (apply deflearn kvs)
-        recurse (fn [data]
-                  (apply deflearn-cont (attach data)))]
+  (let [learn (deflearn config)
+        recurse #(deflearn-cont (assoc config :data %))]
     (fn []
-      (let [channel (learning)
-            qs (async/<!! channel)]
-        (recurse qs)))))
+      (->> (learn) (async/<!!) (recurse)))))
