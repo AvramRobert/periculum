@@ -2,15 +2,14 @@
   (:use
     [periculum.world]
     [periculum.domain]
-    [periculum.more]
     [periculum.plots]
     [periculum.dsl])
   (:require [clojure.core.async :as async]
             [periculum.ext :as ops]
             [periculum.genetic :as g]
             [periculum.rl :as rl]
-            [periculum.domain :as d]
-            [periculum.exports :as e]))
+            [periculum.exports :as e]
+            [periculum.more :as m]))
 
 (def ^:const local-path "/home/robert/Repositories/periculum/resources/")
 
@@ -28,7 +27,7 @@
 (def world-config2 {:floor     (m-struct 14 0 (pos 0 0))
                     :holes     [(pos 3 0) (pos 13 0) (pos 14 0) (pos 15 0)]
                     :walls     [(m-struct 2 3 (pos 6 1)) (m-struct 2 3 (pos 10 1))]
-                    :platforms empty-vec
+                    :platforms m/empty-vec
                     })
 
 (def world-config3 {:floor     (m-struct 20 0 (pos 0 0))
@@ -56,7 +55,7 @@
         start (start<- locals)
         optimum (resolver<- locals)
         mem (atom {})]
-    (fn ([] (when (not-empty? @mem) (optimum start @mem)))
+    (fn ([] (when (m/not-empty? @mem) (optimum start @mem)))
       ([channel]
        (let [data (async/<!! channel)
              _ (swap! mem (fn [_] data))]
@@ -65,11 +64,11 @@
 (defn re-echo [data]
   (async/>!! result-channel data))
 
-(defn learn [config]
+(defn learn [world config]
   "Delegates to `deflearn` but presets the primites to those of the platformer MDP"
   (deflearn (add-locals world config)))
 
-(defn learn-cont [config]
+(defn learn-cont [world config]
   "Delegates to `deflearn-cont` but presets the primites to those of the platformer MDP"
   (deflearn-cont (add-locals world config)))
 
@@ -78,15 +77,17 @@
         roll (fn [data S] (rollout data S nil))
         indv# (population<- config)
         gen# (generations<- config)
-        elite# (generations<- config)]
+        select (g/selection (g/n-elitism (elites<- config))
+                            (g/roulette (roulette<- config)))]
     (fn [data S]
       (let [genesis (g/genetically
                       (repeat indv# (roll data S))
                       ops/p-eval
+                      select
                       (ops/p-mutate data roll)
                       ops/p-cross
                       #(>= (:score %) 2.0))]
-        (second (genesis gen# elite#))))))
+        (second (genesis gen#))))))
 
 (defn- q-up [config]
   (let [argmax (rl/greedy rl/greedy-by-max)
@@ -110,6 +111,11 @@
                       (reduce #(update %1 %2) data)))]
     (rl/dyna-γ-max evolve)))
 
+(defn test-traj [config]
+  (let [locals (add-locals world config)
+        f (genetic-traj locals)]
+    (f (data<- locals) (start<- locals))))
+
 (defn magrl [world config]
   "Multi-Agent Genetic Reinforcement Learning"
   (let [locals (add-locals world config)
@@ -122,9 +128,11 @@
         mutate (ops/vf-mutate 0.5)
         cross (ops/vf-cross-rnd follow)
         repopulate (g/genesis mutate cross)
-        fittest #(max-by fitness %)
+        fittest #(m/max-by fitness %)
         dispatches (dispatches<- config)
-        evolve #((g/evolve-w % fitness repopulate) (generations<- locals) (elites<- config))
+        select (g/selection (g/n-elitism (elites<- config))
+                            (g/roulette (roulette<- config)))
+        evolve #((g/evolve-w % fitness select repopulate) (generations<- locals))
         run! (rl/control->gen algorithm data evolve fittest dispatches)]
     (fn [] (run! start episodes))))
 
@@ -136,29 +144,38 @@
          (assoc locals :algorithm)
          (deflearn))))
 
+(defn match-algorithm [algorithm config]
+  (case algorithm
+    :sarsa-max (fn [world dispatches] (learn world (-> config (assoc :dispatches dispatches))))
+    :magrl (fn [world dispatches] (magrl world (assoc config :dispatches dispatches)))
+    :geprl (fn [world dispatches] (geprl world (assoc config :dispatches dispatches)))))
 
-(defn magrl-test [world config]
+(defn experiment-genetics [amount
+                           algorithm-key
+                           schedule
+                           world
+                           config]
+  "
+  amount -> number of experiments
+  algorithm-key -> key for the algorithm used
+                   current ones are: :sarsa-max, :magrl and :geprl
+  schedule -> predicate(episode): states when to echo data to export thread
+  world -> world to be used
+  config -> standard config provided for any algorithm
+            Note: in the case of MAGRL of GEPRL, the genetic
+            attributes also need to be added.
+            [population, generations, elites, (+ interval)]"
   (let [locals (add-locals world config)
-        follow #((resolver<- locals) start %)
-        channel (async/chan 256)
-        magrl! (magrl world (assoc locals :dispatches {:channel  channel
-                                                       :schedule #(= (mod % 2) 0)}))
-        exp (e/exp "magrl" 2)
-        decoder (e/path-decode follow #(>= % 1.0))]
+        prep (match-algorithm algorithm-key locals)
+        follow #((resolver<- locals) (start<- locals) %)]
     (fn []
-      (do
-        (e/listen! channel exp decoder)
-        (magrl!)))))
-
-(defn geprl-test [world config]
-  (let [locals (dissoc (add-locals world config) :algorithm)
-        follow #((resolver<- locals) start %)
-        channel (async/chan 256)
-        geprl! (geprl world (assoc locals :dispatches {:channel  channel
-                                                       :schedule #(= (mod % 2) 0)}))
-        exp (e/exp "geprl" 1)
-        decoder (e/path-decode follow #(>= % 1.0))]
-    (fn []
-      (do
-        (e/listen! channel exp decoder)
-        (geprl!)))))
+      (dotimes [n amount]
+        (println "Experiment " n)
+        (let [channel (async/chan)
+              run! (prep world {:channel  channel
+                                :schedule schedule})
+              exp (e/exp (name algorithm-key) n)
+              decoder (e/path-decode follow #(>= % 1.0))]
+          (do
+            (e/listen! channel exp decoder)
+            (async/<!! (run!))))))))

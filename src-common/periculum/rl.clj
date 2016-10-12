@@ -1,9 +1,7 @@
 (ns periculum.rl
   (:require [clojure.core.async :as async]
             [clj-tuple :as t]
-            [flatland.useful.seq :as s]
-            [periculum.genetic :as g]
-            [periculum.more :as m])
+            [flatland.useful.seq :as s])
   (:use [periculum.more]))
 
 (def empty-data {:q-values (t/hash-map)

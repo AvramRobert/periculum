@@ -22,9 +22,6 @@
     (assert item (str "Please specify: " message))
     item))
 
-(defn val-of [kvs k]
-  (->> kvs (drop-while #(not= % k)) second))
-
 (defn start<- [config]
   (extract config :start "A starting state"))
 
@@ -81,6 +78,12 @@
 
 (defn elites<- [config]                                     ;; Not checked currently
   (:elites config))
+
+(defn roulette<- [config]                                   ;; Not checked currently
+  (:roulette config))
+
+(defn tournament<- [config]
+  (:tournament config))
 
 (defn dispatches<- [config]                                 ;; Not checked currently
   (if-let [ds (:dispatches config)]

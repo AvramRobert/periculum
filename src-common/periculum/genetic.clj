@@ -1,7 +1,8 @@
 (ns periculum.genetic
   (:require [periculum.more :as m]
             [clj-tuple :as t]
-            [clojure.core.async])
+            [clojure.core.async]
+            [flatland.useful.seq :as f])
   (:import (java.util Random)))
 
 (comment
@@ -23,6 +24,78 @@
   "Applies function `f` or `g` to `a` non-deterministically."
   (let [rnd (new Random)]
     (if (.nextBoolean rnd) (f a) (g a))))
+
+(defn- degressive [f amount evaluated]
+  "Degressively chooses `amount` individuals from `evaluated` using `f`"
+  (loop [parents (t/tuple)
+         elder evaluated]
+    (cond
+      (empty? elder) parents
+      (>= (count parents) amount) parents
+      :default
+      (let [candidate (f elder)]
+        (recur (conj parents candidate)
+               (remove #(= % candidate) elder))))))
+
+(defn- roulette-select [evaluated]
+  "Selects an individual by means of roulette-wheel selection"
+  (let [reds (reductions #(+ %1 (:score %2)) 0.0 evaluated)
+        r (rand-int (last reds))]
+    (->> evaluated
+         (f/zip reds)
+         (drop-while (fn [[v, _]] (< v r)))
+         (first)
+         (second))))
+
+(defn- tournament-select [k evaluated]
+  "Selects an individual by means of tournament selection."
+  (let [candidates (t/tuple (rand-nth evaluated) (rand-nth evaluated))]
+    (if (> k (rand)) (m/max-by :score candidates)
+                     (m/min-by :score candidates))))
+
+(defn- elite-select [f evaluated]
+  "Selects the fittest individual by means of `f`"
+  (->> evaluated
+       (m/desc-by :score)
+       (f)))
+
+(defn roulette [amount]
+  "Given an amount, it returns a function, that when given an evaluated population,
+  chooses the given amount of individuals based on roulette-wheel selection."
+  (fn [evaluated]
+    (degressive roulette-select amount evaluated)))
+
+(defn tournament [k amount]
+  "Given a `k` factor between [0, 1] and an amount, it returns a function, that when given an evaluated
+  population, chooses `amount` number of individuals based on tournament selection."
+  (fn [evaluated]
+    (degressive #(tournament-select k %) amount evaluated)))
+
+(defn n-elitism [amount]
+  "Given an amount, it returns a function, that when given an evaluated population,
+  chooses the given amount of fittest individuals."
+  (fn [evaluated]
+    (elite-select #(take amount %) evaluated)))
+
+(defn selection [& fs]
+  "Given an evaluated population and a number of selection functions,
+  it selects degressively and incrementally with each given function.
+  Degressive means, that once one individual was selected, it is no longer
+  present in the initial selection pool."
+  (fn [evaluated]
+    (let [total (count evaluated)]
+      (loop [elder evaluated
+             parents (t/tuple)
+             [f & tfs] fs]
+        (cond
+          (empty? elder) parents
+          (nil? f) parents
+          (>= (count parents) total) parents
+          :default
+          (let [chosen (f elder)]
+            (recur (remove #(f/include? % chosen) evaluated)
+                   (m/fuse chosen parents)
+                   tfs)))))))
 
 (defn genesis [mutate crossover]
   "Given a mutation and crossover function, it returns a function
@@ -71,11 +144,11 @@
     It knows how and which genetic operators to use. It can also
     do other things, if it is so desired. It must however be pure."
 
-  ([population fitness repopulate]
-   (evolve population fitness repopulate (fn [_] false)))
-  ([population fitness repopulate perfect?]
+  ([population fitness select repopulate]
+   (evolve population fitness select repopulate (fn [_] false)))
+  ([population fitness select repopulate perfect?]
    (let [indv# (count population)]
-     (fn [gen# elite#]
+     (fn [gen#]
        (loop [generation gen#
               individuals population]
          (let [fitted (map #(->Eval % (fitness %)) individuals)
@@ -84,7 +157,7 @@
              (some? best) (t/tuple (- gen# generation) best)
              (> generation 0) (->> fitted
                                    (m/desc-by :score)
-                                   (take elite#)
+                                   (select)
                                    (map indv)
                                    (repopulate indv#)
                                    (recur (dec generation)))
@@ -94,21 +167,21 @@
                            (t/tuple gen#)))))))))
 
 
-(defn evolve-w [population fitness repopulate]
+(defn evolve-w [population fitness select repopulate]
   "A function that runs an evolutionary algorithm.
   Similar to `evolve`, it evolves by using the same schema, but
    does not look for a `perfect` individual and also does not
    return one single individual. It returns the whole evolved population
    after the specified generations have elapsed."
   (let [indv# (count population)]
-    (fn [gen# elite#]
+    (fn [gen#]
       (loop [generation gen#
              individuals population]
         (if (> generation 0)
           (->> individuals
                (map #(->Eval % (fitness %)))
                (m/desc-by :score)
-               (take elite#)
+               (select)
                (map indv)
                (repopulate indv#)
                (recur (dec generation)))
@@ -118,8 +191,8 @@
                (take indv#)
                (map indv)))))))
 
-(defn genetically [population fitness mutate cross perfect?]
-  (evolve population fitness (genesis mutate cross) perfect?))
+(defn genetically [population fitness select mutate cross perfect?]
+  (evolve population fitness select (genesis mutate cross) perfect?))
 
-(defn b-genetically [population fitness mutate cross perfect?]
-  (evolve population fitness (b-genesis mutate cross) perfect?))
+(defn b-genetically [population fitness select mutate cross perfect?]
+  (evolve population fitness select (b-genesis mutate cross) perfect?))

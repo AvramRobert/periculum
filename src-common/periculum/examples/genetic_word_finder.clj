@@ -55,5 +55,5 @@
   This returns a tuple of the word, and the generation it has been found at."
   (let [fitness (evaluator word)
         init (take indv# (population word))
-        genesis (genetically init fitness mutate cross perfect?)]
-    (genesis gen# elite#)))
+        genesis (genetically init fitness (n-elitism elite#) mutate cross perfect?)]
+    (genesis gen#)))

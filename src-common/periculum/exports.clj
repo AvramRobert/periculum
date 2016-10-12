@@ -94,6 +94,6 @@
 (defn listen! [channel experiment decode]
   (async/go-loop [x experiment]
     (if-let [data (async/<! channel)]
-      (->> data (decode) (add-trace x) (check 5) (recur))
+      (->> data (decode) (add-trace x) (check 20) (recur))
       (->> x finalise export!))))
 
