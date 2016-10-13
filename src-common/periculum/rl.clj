@@ -596,7 +596,6 @@
           A' (argmax S (action S) data episode)]
       (-> data
           (assoc-in [:q-values S A] (Q-sarsa-1 data S A R S' A'))
-          ;;(think-f S')
           (t/tuple S')))))
 
 (defn dyna-γ [think-q argmax]

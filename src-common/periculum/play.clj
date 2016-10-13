@@ -111,11 +111,6 @@
                       (reduce #(update %1 %2) data)))]
     (rl/dyna-γ-max evolve)))
 
-(defn test-traj [config]
-  (let [locals (add-locals world config)
-        f (genetic-traj locals)]
-    (f (data<- locals) (start<- locals))))
-
 (defn magrl [world config]
   "Multi-Agent Genetic Reinforcement Learning"
   (let [locals (add-locals world config)
