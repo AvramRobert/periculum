@@ -7,7 +7,8 @@
             [play-clj.g2d :refer :all]
             [play-clj.g2d-physics :refer :all]
             [periculum.world :refer [world-from-pixmap]]
-            [clojure.core.match :refer [match]]))
+            [clojure.core.match :refer [match]]
+            [clj-tuple :as t]))
 
 (defn assoc-from [entity txture]
   (let [pos (block-pos (:position entity))]
@@ -67,15 +68,17 @@
       [lefts rights rests])))
 
 (defn wall-texture [tiles entities]
-  (dist-wall
-    (texture (aget tiles 2 8))                              ;;top left corner
-    (texture (aget tiles 2 10))                             ;;top right corner
-    (texture (aget tiles 2 8))                              ;;bottom left corner
-    (texture (aget tiles 2 10))                             ;;bottom right corner
-    (texture (aget tiles 2 8))                              ;;inner left corner
-    (texture (aget tiles 2 10))                             ;;inner right corner
-    (texture (aget tiles 2 9))                              ;;inner
-    entities))
+  (if (not-empty? entities)
+    (dist-wall
+      (texture (aget tiles 2 8))                            ;;top left corner
+      (texture (aget tiles 2 10))                           ;;top right corner
+      (texture (aget tiles 2 8))                            ;;bottom left corner
+      (texture (aget tiles 2 10))                           ;;bottom right corner
+      (texture (aget tiles 2 8))                            ;;inner left corner
+      (texture (aget tiles 2 10))                           ;;inner right corner
+      (texture (aget tiles 2 9))                            ;;inner
+      entities)
+    (t/tuple)))
 
 (defn floor-shape [entity]
   (let [pos (to-render-pos entity)]
@@ -84,12 +87,14 @@
                   :rect 0 0 block-size block-size) :x (:x pos) :y (:y pos))))
 
 (defn floor-texture [tiles entities]
-  (dist-floor
-    (texture (aget tiles 1 0))                              ;;left corner
-    (texture (aget tiles 1 2))                              ;;right corner
-    (texture (aget tiles 1 1))                              ;;inner
-    entities))
-    
+  (if (not-empty? entities)
+    (dist-floor
+      (texture (aget tiles 1 0))                            ;;left corner
+      (texture (aget tiles 1 2))                            ;;right corner
+      (texture (aget tiles 1 1))                            ;;inner
+      entities)
+    (t/tuple)))
+
 (defn agent-shape [x y]
   (let [pos (block-pos x y)]
     (assoc (shape :filled
@@ -99,8 +104,20 @@
       :y (:y pos)
       :animated? false)))
 
-(defn agent-texture [sheet]
-  (let [tiles (texture! sheet :split half-block half-block)]
+(defn fly [entities dir]
+  (on-player
+    entities
+    (fn [agent-tex]
+      (let [norm (normalise (:x agent-tex) (:y agent-tex))
+            [nx ny] (t/tuple (:x norm) (+ (:y norm) dir))
+            pos (block-pos (:x norm) (+ (:y norm) dir))]
+        (assoc agent-tex
+          :x (:x pos)
+          :y (:y pos)
+          :state (state nx ny (-> agent-tex :state :previous-action)))))))
+
+(defn agent-texture [sheet width height]
+  (let [tiles (texture! sheet :split width height)]
     (fn [x y]
       (let [pos (block-pos x y)]
         (assoc (texture (aget tiles 0 0))
@@ -182,9 +199,9 @@
            (fn [screen entities]
              (update! screen :renderer (stage) :camera (orthographic))
              (let [animation-sheet (texture "sheet.png")
-                   player-anim (agent-texture animation-sheet)
+                   player-anim (agent-texture animation-sheet texture-size texture-size)
                    environment-sheet (texture "env-tiles1.png")
-                   env-tiles (texture! environment-sheet :split half-block half-block)
+                   env-tiles (texture! environment-sheet :split texture-size texture-size)
                    landscape (assoc (texture "wall1.png")
                                :id :background
                                :width (:width screen)
@@ -197,7 +214,7 @@
                                (filter #(= (:type %) :floor))
                                (floor-texture env-tiles)
                                (flatten))
-                   player (player-anim 1 1)]
+                   player (player-anim (-> start :position :x) (-> start :position :y))]
                (flatten [[landscape]
                          (map #(assoc % :wall? true) walls)
                          (map #(assoc % :floor? true) floors)
@@ -235,7 +252,9 @@
                  (= key (key-code :a))
                  (do-act entities :run-left)
                  (= key (key-code :d))
-                 (do-act entities :run-right)))))
+                 (do-act entities :run-right)
+                 (= key (key-code :u))
+                 (fly entities 1)))))
 
 (defgame periculum-game
          :on-create

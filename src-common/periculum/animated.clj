@@ -13,11 +13,11 @@
 
 (def ^:const delta (/ 1 20))
 (def ^:const fpa 5)
-(def ^:const scale 2)
+(def ^:const scale 1/2)
 (def ^:const tile-size 32)
+(def ^:const texture-size 32)
 
 (def block-size (* scale tile-size))
-(def half-block (/ block-size 2))
 
 (defn anim-idx-for [action]
   (case action

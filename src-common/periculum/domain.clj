@@ -28,9 +28,9 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
-(def Rewards {:tic   0   ;; change to -0.01 for ideal temporal punishment
+(def Rewards {:tic   0                                      ;; change to -0.01 for ideal temporal punishment
               :solid -1
-              :end   2})
+              :end   20})
 
 
 (def primitive-actions {:stand      (->Action 0 1 [0 0])
@@ -283,12 +283,15 @@
   ([world actions terminal?]
    (transition-com world actions terminal?)))
 
-(defn terminal? [world]
+(defn terminal?
   "Given a platformer world, it returns a closure. The closure will, given a state,
   appropriately detect end states"
-  (let [max (max-by #(-> % (:position) (:x)) world)]
-    (fn [state]
-      (>= (-> state (:position) (:x)) (-> max (:position) (:x))))))
+  ([world] (terminal? world (fn [state max]
+                              (>= (-> state :position :x)
+                                  (-> max :position :x)))))
+  ([world p]
+   (let [max (max-by #(-> % :position :x) world)]
+     (fn [state] (p state max)))))
 
 (defn actions [S]
   "Given a state, it returns the available actions for that state"

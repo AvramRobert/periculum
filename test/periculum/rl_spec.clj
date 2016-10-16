@@ -21,23 +21,6 @@
               (->Sample S A R))
             (gen/tuple gen-state gen-action (gen/double* {:infinite? false :NaN? false}))))
 
-(defn sum-exp [chain γ]
-  (let [discounted (discount chain γ)]
-    (assoc (first chain) :reward (reduce + discounted))))
-
-
-(defspec discounted-reward-test
-         100
-         (prop/for-all [v (gen/such-that #(not-empty %) (gen/vector gen-sample))
-                        d (gen/double* {:infinite? false
-                                        :NaN?      false
-                                        :min       0.0
-                                        :max       1.0})]
-                       (let [expected-0 (Gt v 0.0)
-                             expected-1 (Gt v d)]
-                         (= expected-0 v)
-                         (= (first expected-1) (sum-exp v d)))))
-
 (deftest lazy-trajectory-test
   (let [policy (fn [S _ _ _]
                  (if (even? (:x S))
