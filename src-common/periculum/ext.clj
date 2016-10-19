@@ -41,7 +41,7 @@
   it may take a singluar amount of n episodes to converge (n < y),
   the collective amount is #agents * n. This implies more computational cost")
 
-(defn- when-more [g f]                                       ;; make macro
+(defn- when-more [g f]                                      ;; make macro
   (if (empty? (-> g :q-values keys)) g (f g)))
 
 (defn- to-sample [genome pair]
@@ -49,13 +49,6 @@
                (:action pair)
                (get-in genome [:q-values (:state pair) (:action pair)])))
 
-(defn- fuse-at [at g1 g2]
-  (m/fuse (take-while #(not (= (:state %) at)) g1)
-          (drop-while #(not (= (:state %) at)) g2)))
-
-(defn- candidate [set1 set2]
-  (let [x (vec (s/intersection set1 set2))]
-    (if (empty? x) nil (rand-nth x))))
 
 ;; ========= Value function =========
 
@@ -90,20 +83,3 @@
            (rl/total-reward)))))
 
 ;; ========= Planning =========
-
-(defn p-mutate [data rollout]
-  (fn [genome]
-    (let [sample (rand-nth genome)
-          tail (rollout data (:state sample))]
-      (fuse-at (:state sample) genome tail))))
-
-(defn p-cross [genome1 genome2]
-  (let [s1 (->> genome1 (drop 1) (map :state) (set))
-        s2 (->> genome2 (drop 1) (map :state) (set))]
-    (if-let [X (candidate s1 s2)]
-      (t/vector
-        (fuse-at X genome1 genome2)
-        (fuse-at X genome2 genome1))
-      (t/vector genome1 genome2))))
-
-(defn p-eval [genome] (rl/total-reward genome))

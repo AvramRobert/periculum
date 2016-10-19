@@ -7,13 +7,15 @@
             [clojure.java.io :as io]
             [periculum.rl :as rl]
             [clojure-csv.core :as c]
+            [incanter.stats :as stats]
             [flatland.useful.seq :as f]))
 
-(def ^:const exp-path "/home/robert/Documents/Thesis/experiments/")
+(def ^:const exp-path "/home/robert/Documents/Thesis/draft/experiments/")
 
 (defrecord Experiment [label index traces])
 (defrecord Trace [attempt label episode reward optimum? cpu])
 (defrecord Result [attempt label converged? episode reward delta-cpu])
+(defrecord Stat [experiments best worst converged failures mean-eps mean-cpu])
 
 (defn exp [label index]
   (->Experiment label index (t/tuple)))
@@ -35,16 +37,24 @@
                  :optimum? ->boolean
                  :cpu      s/->long})
 
-(def data-casts {:episode   s/->int
-                 :mean      s/->long
-                 :variance  s/->long
-                 :deviation s/->long})
+(def data-casts {:episode          s/->int
+                 :mean-reward      s/->float
+                 :variance-reward  s/->long
+                 :deviation-reward s/->long})
 
 (def result-casts {:attempt    s/->int
                    :converged? ->boolean
                    :episode    s/->int
                    :reward     s/->double
                    :delta-cpu  s/->long})
+
+(def stats-casts {:experiments s/->int
+                  :best        s/->int
+                  :worst       s/->int
+                  :converged   s/->int
+                  :failures    s/->int
+                  :mean-eps    s/->float
+                  :mean-cpu    s/->long})
 
 (defn- sqrd-diff [ts ms]
   (map (fn [trace]
@@ -87,6 +97,20 @@
     (- (:cpu proper)
        (:cpu (first traces)))))
 
+(defn make-stats [results]
+  (let [converged (filter :converged? results)]
+    (->Stat
+      (count results)
+      (->> results (m/min-by :episode) :episode)
+      (->> results (m/max-by :episode) :episode)
+      (count converged)
+      (- (count results) (count converged))
+      (->> converged (map :episode) stats/mean float Math/round)
+      (->> converged (map :delta-cpu) stats/mean))))
+
+(defn- label [experiments]
+  (-> experiments first first :label))
+
 (defn path-decode [follow optimal?]
   (fn [body]
     (let [reward (->> body :data follow rl/total-reward)]
@@ -97,8 +121,8 @@
 
 (defn export! [experiment]
   (with-open [out (io/writer (str exp-path
-                                  (:label experiment)
                                   (:index experiment)
+                                  (:label experiment)
                                   ".csv"))]
     (write! out trace-cast (:traces experiment))))
 
@@ -110,13 +134,13 @@
        (pick traces)
        (make-result traces)))
 
-(defn import! [from]
+(defn import-with! [casts from]
   (with-open [in (io/reader (str exp-path from))]
     (->>
       (c/parse-csv in)
       (s/remove-comments)
       (s/mappify)
-      (s/cast-with trace-cast)
+      (s/cast-with casts)
       doall)))
 
 (defn means [experiments]
@@ -129,8 +153,6 @@
               :episode (:episode %)
               :mean (/ (:reward %) (count experiments))))))
 
-;; FIXME are these sample standard deviations, because I sample at every n episodes?
-;; If so, then add Bessel's correction for the second mean 1 / (N - 1)
 (defn variances [experiments]
   (let [means (means experiments)]
     (-> experiments
@@ -146,23 +168,50 @@
         (map-sum #(Math/sqrt (/ % (count experiments)))))))
 
 (defn data! [experiments]
-  (with-open [out (io/writer (str exp-path (-> experiments first first :label) "_data.csv"))]
+  (with-open [out (io/writer (str exp-path (label experiments) "_data.csv"))]
     (let [means (means experiments)
           variances (variances experiments)
           std-devs (std-deviations experiments)]
       (->> (f/zip means variances std-devs)
-           (map (fn [[m v s]] {:label     (:label m)
-                               :episode   (:episode m)
-                               :mean      (:mean m)
-                               :variance  (:deviation v)
-                               :deviation (:deviation s)}))
+           (map (fn [[m v s]] {:episode          (:episode m)
+                               :mean-reward      (:mean m)
+                               :variance-reward  (:deviation v)
+                               :deviation-reward (:deviation s)}))
            (write! out data-casts)))))
 
+(defn import-exp!
+  ([amount name]
+   (import-exp! amount "" name))
+  ([amount folder name]
+   (for [n (range 0 amount)]
+     (import-with! trace-cast (str folder n name ".csv")))))
+
 (defn results! [upper-bound experiments]
-  (with-open [out (io/writer (str exp-path (-> experiments first first :label) "_results.csv"))]
+  (with-open [out (io/writer (str exp-path (label experiments) "_results.csv"))]
     (->> experiments
          (map #(result upper-bound %))
          (write! out result-casts))))
+
+(defn stats! [upper-bound experiments]
+  (with-open [out (io/writer (str exp-path (label experiments) "_stats.csv"))]
+    (->> experiments
+         (map #(result upper-bound %))
+         (make-stats)
+         (t/tuple)
+         (write! out stats-casts))))
+
+(defn upper-bound [P experiments]
+  "Let
+    N(x) = number of traces in experiments
+       E = number of chosen episodes
+   => Ix = E / N(x), interval at which a trace was logged
+
+   It is always desired to check the same amount of data for convergence, regardless of
+   Ix, E and thus N(x). For any E and Ix, P percent of data should always be checked for convergence.
+
+   => given P = percentage to be checked
+            U = P * N(x), where U is the upper-bound for `results!`"
+  (* P (count experiments)))
 
 (defn listen! [channel experiment decode]
   (async/go-loop [x experiment]

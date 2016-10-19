@@ -115,9 +115,6 @@
 (defn fuse [& colls]
   (vec (flatten (apply t/tuple colls))))
 
-(defn %->int [percent n]
-  (Math/round (float (* percent n))))
-
 (defn- spy [f item]
   (do
     (f item)

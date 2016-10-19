@@ -10,13 +10,11 @@
   { :individual  _
     :score       _ }")
 
-;; FIXME: Implement roulette and tournament selection
-
-(defrecord Eval [individual score])
+(defrecord Eval [index individual score])
 
 (defn lift-eval
   ([item] (lift-eval item 0))
-  ([item score] (->Eval item score)))
+  ([item score] (->Eval 0 item score)))
 
 (defn indv [ev] (:individual ev))
 
@@ -35,7 +33,7 @@
       :default
       (let [candidate (f elder)]
         (recur (conj parents candidate)
-               (remove #(= % candidate) elder))))))
+               (remove #(= (:index %) (:index candidate)) elder))))))
 
 (defn- roulette-select [evaluated]
   "Selects an individual by means of roulette-wheel selection"
@@ -92,8 +90,9 @@
           (nil? f) parents
           (>= (count parents) total) parents
           :default
-          (let [chosen (f elder)]
-            (recur (remove #(f/include? % chosen) evaluated)
+          (let [chosen (f elder)
+                idxs (map :index chosen)]
+            (recur (remove #(f/include? (:index %) idxs) evaluated)
                    (m/fuse chosen parents)
                    tfs)))))))
 
@@ -151,7 +150,7 @@
      (fn [gen#]
        (loop [generation gen#
               individuals population]
-         (let [fitted (map #(->Eval % (fitness %)) individuals)
+         (let [fitted (map-indexed (fn [idx itm] (->Eval idx itm (fitness itm))) individuals)
                best (m/find-some perfect? fitted)]
            (cond
              (some? best) (t/tuple (- gen# generation) best)
@@ -159,6 +158,7 @@
                                    (m/desc-by :score)
                                    (select)
                                    (map indv)
+                                   (filter #(not (nil? %)))
                                    (repopulate indv#)
                                    (recur (dec generation)))
              :default (->> fitted
@@ -179,14 +179,15 @@
              individuals population]
         (if (> generation 0)
           (->> individuals
-               (map #(->Eval % (fitness %)))
+               (map-indexed (fn [idx itm] (->Eval idx itm (fitness itm))))
                (m/desc-by :score)
                (select)
                (map indv)
+               (filter #(not (nil? %)))
                (repopulate indv#)
                (recur (dec generation)))
           (->> individuals
-               (map #(->Eval % (fitness %)))
+               (map-indexed (fn [idx itm] (->Eval idx itm (fitness itm))))
                (m/desc-by :score)
                (take indv#)
                (map indv)))))))

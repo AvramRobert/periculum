@@ -110,6 +110,14 @@
     (transition<- config)
     (terminal<- config)))
 
+(defn- parameters-rnd<- [config]
+  (t/tuple
+    eps-balanced
+    (action<- config)
+    (reward<- config)
+    (transition<- config)
+    (terminal<- config)))
+
 (defn primitives<- [config]
   {:start      (start<- config)
    :policy     (policy<- config)

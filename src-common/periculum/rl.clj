@@ -1,7 +1,9 @@
 (ns periculum.rl
   (:require [clojure.core.async :as async]
             [clj-tuple :as t]
-            [flatland.useful.seq :as s])
+            [flatland.useful.seq :as s]
+            [periculum.more :as m]
+            [periculum.genetic :as g])
   (:use [periculum.more]))
 
 (def empty-data {:q-values (t/hash-map)
@@ -83,7 +85,7 @@
        (println "Executing")
        (letfn [(genesis [episode civ]
                  (if (and (> episode 1)
-                          (zero? (mod (:interval config) episode)))
+                          (zero? (mod episode (:interval config))))
                    (evolve civ) civ))
                (destroy-return! [passing]
                  (close-all! (map first dispatches))
@@ -238,6 +240,20 @@
        (let [[n-data n-init] (algorithm data state episode)]
          (recur n-data n-init episode))))))
 
+(defn- evaluate2
+  "Evaluates one episode of a given RL-algorithm.
+  It can be given an addition endofunction, which is applied to the intermediate Q-values
+  after each episode."
+  ([algorithm terminal?]
+   (evaluate algorithm terminal? identity))
+  ([algorithm terminal? endo]
+   (fn [data state episode]
+     (if (terminal? state)
+       (endo data episode)
+       (let [[n-data n-init] (algorithm data state episode)]
+         (recur n-data n-init episode))))))
+
+
 ;; ========= Policies =========
 
 (defn- ε-greedy [ε argmax]
@@ -318,7 +334,7 @@
         N-SA (N data S A)]
     (assoc-in data [:q-values S A] (+ Q-SA (* (/ 1 N-SA) (- Gt-SA Q-SA))))))
 
-(defn monte-carlo-update [data markov-chain]
+(defn- monte-carlo-update [data markov-chain]
   (reduce Q-monte-carlo (every-visit-inc data markov-chain) markov-chain))
 
 (defn- monte-carlo-eval [policy
@@ -582,10 +598,36 @@
        terminal?]
     (dyna-q thinking-time policy (greedy greedy-by-max) action reward transition terminal?)))
 
-;; ========= Dyna-γ (My own creation) =========
+;; ========= Dyna-rho =========
 
-(defn- dyna-γ-eval [argmax
-                    policy
+(defn- fuse-at [at g1 g2]
+  (m/fuse (take-while #(not (= (:state %) at)) g1)
+          (drop-while #(not (= (:state %) at)) g2)))
+
+(defn- candidate [set1 set2]
+  (let [x (vec (clojure.set/intersection set1 set2))]
+    (if (empty? x) nil (rand-nth x))))
+
+
+(defn- r-mutate [data rollout]
+  (fn [genome]
+    (let [sample (rand-nth genome)
+          tail (rollout data (:state sample))]
+      (fuse-at (:state sample) genome tail))))
+
+(defn- r-cross [genome1 genome2]
+  (let [s1 (->> genome1 (drop 1) (map :state) (set))
+        s2 (->> genome2 (drop 1) (map :state) (set))]
+    (if-let [X (candidate s1 s2)]
+      (t/vector
+        (fuse-at X genome1 genome2)
+        (fuse-at X genome2 genome1))
+      (t/vector genome1 genome2))))
+
+(defn- r-eval [genome] (total-reward genome))
+
+(defn- dyna-r-eval [policy
+                    argmax
                     action
                     reward
                     transition]
@@ -593,23 +635,70 @@
     (let [A (policy S (action S) data episode)
           R (reward S A)
           S' (transition S A)
-          A' (argmax S (action S) data episode)]
+          A' (argmax S' (action S') data episode)]
       (-> data
           (assoc-in [:q-values S A] (Q-sarsa-1 data S A R S' A'))
+          (assoc-in [:model S A] (t/hash-map :reward R :next S'))
           (t/tuple S')))))
 
-(defn dyna-γ [think-q argmax]
+(defn- rollout-model [terminal?]
+  (fn [data start]
+    (loop [chain (t/tuple)
+           S start]
+      (if (terminal? S)
+        chain
+        (let [A (eps-balanced S (-> data (get-in [:model S]) keys vec) data nil)
+              {R  :reward
+               S' :next} (get-in data [:model S A])]
+          (recur (conj chain (->Sample S A R)) S'))))))
+
+(defn- q-update-sample [argmax
+                        action
+                        transition]
+  (fn [data sample]
+    (let [{S :state
+           A :action
+           R :reward} sample
+          S' (transition S A)
+          A' (argmax S' (action S') data nil)]
+      (assoc-in data [:q-values S A] (Q-sarsa-1 data S A R S' A')))))
+
+(defn- planned-genesis [genesis
+                        argmax
+                        action
+                        transition]
+  (fn [data]
+    (let [q-update (q-update-sample argmax action transition)]
+      (->> data
+           (genesis (-> data :model keys vec rand-nth))
+           (reduce q-update data)))))
+
+(defn dyna-r [population
+              generations
+              elites
+              roulette
+              perfect?]
   (fn [policy
        action
        reward
        transition
        terminal?]
-    (-> argmax
-        (dyna-γ-eval policy action reward transition)
-        (evaluate terminal? think-q))))
-
-(defn dyna-γ-max [think-q]
-  (dyna-γ think-q (greedy greedy-by-max)))
+    (let [rollout (rollout-model terminal?)
+          genesis (fn [start data]
+                    (-> (repeat population (rollout data start))
+                        (g/genetically r-eval
+                                       (g/selection (g/n-elitism elites)
+                                                    (g/roulette roulette))
+                                       (r-mutate data rollout)
+                                       r-cross
+                                       perfect?)
+                        (apply [generations])
+                        (second)
+                        (g/indv)))
+          plan (planned-genesis genesis (greedy greedy-by-max) action transition)]
+      (-> policy
+          (dyna-r-eval (greedy greedy-by-max) action reward transition)
+          (evaluate terminal? plan)))))
 
 ;; ========= Learned path =========
 
