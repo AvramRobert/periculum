@@ -361,7 +361,7 @@
 
 ;; ========= SARSA(1) =========
 
-(defn Q-sarsa-1 [data S A R S' A']
+(defn- Q-sarsa-1 [data S A R S' A']
   (let [alpha (:alpha data)
         gamma (:gamma data)
         Q-SA (Q data S A)
