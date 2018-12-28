@@ -16,29 +16,6 @@
 (def result-channel (async/chan))
 (def expect-channel (async/chan))
 
-(defn state [x y action]
-  (->State (->Pos x y) action))
-
-(def world-config1 {:floor     (m-struct 16 0 (pos 0 0))
-                    :holes     [(pos 3 0) (pos 4 0) (pos 9 0) (pos 10 0)]
-                    :walls     [(m-struct 2 3 (pos 7 1))]
-                    :platforms [(m-struct 2 (pos 10 5))]})
-
-(def world-config2 {:floor     (m-struct 14 0 (pos 0 0))
-                    :holes     [(pos 3 0) (pos 13 0) (pos 14 0) (pos 15 0)]
-                    :walls     [(m-struct 2 3 (pos 6 1)) (m-struct 2 3 (pos 10 1))]
-                    :platforms m/empty-vec
-                    })
-
-(def world-config3 {:floor     (m-struct 20 0 (pos 0 0))
-                    :holes     [(pos 4 0) (pos 5 0) (pos 6 0)
-                                (pos 7 0) (pos 8 0) (pos 9 0)
-                                (pos 10 0) (pos 11 0) (pos 12 0)]
-                    :walls     [(m-struct 2 3 (pos 13 1))]
-                    :platforms [(m-struct 2 (pos 5 3)) (m-struct 2 (pos 8 4))]})
-
-
-
 (def scene0_stage0 (world-from-pixmap (str local-path "scene0_stage0.png")))
 (def scene0_stage1 (world-from-pixmap (str local-path "scene0_stage1.png")))
 (def scene0_stage2 (world-from-pixmap (str local-path "scene0_stage2.png")))
@@ -51,65 +28,61 @@
 (def scene2_stage1 (world-from-pixmap (str local-path "scene2_stage1.png")))
 (def scene2_stage2 (world-from-pixmap (str local-path "scene2_stage2.png")))
 
-(def world scene0_stage0)
-(def start (->State (->Pos 1 1) :stand))
+(def levels
+  {:scene0_stage0 {:world scene0_stage0
+                   :terminal (terminal? scene0_stage0 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
+                   :start (->State (->Pos 1 1) :stand)}
+   :scene0_stage1 {:world scene0_stage1
+                   :terminal (terminal? scene0_stage1 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 4))))
+                   :start (->State (->Pos 1 1) :stand)}
 
-(defn term&start [key config]
-  (case key
-    :scene0_stage0 (assoc config
-                     :terminal (terminal? scene0_stage0 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
-                     :start (->State (->Pos 1 1) :stand))
+   :scene0_stage2 {:world scene0_stage2
+                   :terminal (terminal? scene0_stage2 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
+                   :start (->State (->Pos 1 1) :stand)}
 
+   :scene1_stage0 {:world scene1_stage0
+                   :terminal (terminal? scene1_stage0 (fn [state max] (and
+                                                                        (>= (-> state :position :x) (- (-> max :position :x) 3))
+                                                                        (<= (-> state :position :y) 5))))
+                   :start (->State (->Pos 6 13) :stand)}
+   :scene1_stage1 {:world scene1_stage1
+                   :terminal (terminal? scene1_stage1 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
+                   :start (->State (->Pos 6 13) :stand)}
+   :scene1_stage2 {:world scene1_stage2
+                   :terminal (terminal? scene1_stage2 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
+                   :start (->State (->Pos 6 13) :stand)}
 
-    :scene0_stage1 (assoc config
-                     :terminal (terminal? scene0_stage1 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 4))))
-                     :start (->State (->Pos 1 1) :stand))
-    :scene0_stage2 (assoc config
-                     :terminal (terminal? scene0_stage2 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
-                     :start (->State (->Pos 1 1) :stand))
+   :scene2_stage0 {:world scene2_stage0
+                   :terminal (terminal? scene2_stage0 (fn [state max] (and
+                                                                        (>= (-> state :position :x) (- (-> max :position :x) 3)))))
+                   :start (->State (->Pos 4 11) :stand)}
+   :scene2_stage1 {:world scene2_stage1
+                   :terminal (terminal? scene2_stage1 (fn [state max] (and
+                                                                        (>= (-> state :position :x) (- (-> max :position :x) 6))
+                                                                        (<= (-> state :position :y) 7))))
+                   :start (->State (->Pos 4 15) :stand)}
+   :scene2_stage2 {:world scene2_stage2
+                   :terminal (terminal? scene2_stage2 (fn [state max] (and
+                                                                        (>= (-> state :position :x) (- (-> max :position :x) 3))
+                                                                        (<= (-> state :position :y) 7))))
+                   :start (->State (->Pos 4 24) :stand)}})
 
-    :scene1_stage0 (assoc config
-                     :terminal (terminal? scene1_stage0 (fn [state max] (and
-                                                                          (>= (-> state :position :x) (- (-> max :position :x) 3))
-                                                                          (<= (-> state :position :y) 5))))
-                     :start (->State (->Pos 6 13) :stand))
+(def level :scene0_stage2)
 
-    :scene1_stage1 (assoc config
-                     :terminal (terminal? scene1_stage1 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
-                     :start (->State (->Pos 6 13) :stand))
+(def world (-> levels (get level) (:world)))
+(def start (-> levels (get level) (:start)))
 
-    :scene1_stage2 (assoc config
-                     :terminal (terminal? scene1_stage2 (fn [state max] (>= (-> state :position :x) (- (-> max :position :x) 3))))
-                     :start (->State (->Pos 6 13) :stand))
-
-    :scene2_stage0 (assoc config
-                     :terminal (terminal? scene2_stage0 (fn [state max] (and
-                                                                          (>= (-> state :position :x) (- (-> max :position :x) 3)))))
-                     :start (->State (->Pos 4 11) :stand))
-
-    :scene2_stage1 (assoc config
-                     :terminal (terminal? scene2_stage1 (fn [state max] (and
-                                                                          (>= (-> state :position :x) (- (-> max :position :x) 6))
-                                                                          (<= (-> state :position :y) 7))))
-                     :start (->State (->Pos 4 15) :stand))
-
-    :scene2_stage2 (assoc config
-                     :terminal (terminal? scene2_stage2 (fn [state max] (and
-                                                                          (>= (-> state :position :x) (- (-> max :position :x) 3))
-                                                                          (<= (-> state :position :y) 7))))
-                     :start (->State (->Pos 4 24) :stand))
-    "default"))
-
-(defn- add-locals [world config]
-  (let [nconf (term&start (terminal<- config) config)
-        terminal (terminal<- nconf)]
+(defn- add-locals [world-key config]
+  (let [nconf    (merge config (levels world-key {}))
+        terminal (terminal<- nconf)
+        world    (:world nconf)]
     (-> nconf
         (assoc :action actions)
         (assoc :reward (reward world terminal))
         (assoc :transition (transition world terminal)))))
 
-(defn recompute [world config]
-  (let [locals (add-locals world config)
+(defn recompute [world-key config]
+  (let [locals (add-locals world-key config)
         start (start<- locals)
         optimum (resolver<- locals)
         mem (atom {})]

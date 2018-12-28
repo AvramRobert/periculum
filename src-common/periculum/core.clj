@@ -6,9 +6,10 @@
             [play-clj.ui :refer :all]
             [play-clj.g2d :refer :all]
             [play-clj.g2d-physics :refer :all]
-            [periculum.world :refer [world-from-pixmap]]
             [clojure.core.match :refer [match]]
-            [clj-tuple :as t]))
+            [clj-tuple :as t]
+            [periculum.domain :refer [->State]]
+            [periculum.world :refer [->Pos]]))
 
 (defn assoc-from [entity txture]
   (let [pos (block-pos (:position entity))]
@@ -114,7 +115,7 @@
         (assoc agent-tex
           :x (:x pos)
           :y (:y pos)
-          :state (state nx ny (-> agent-tex :state :previous-action)))))))
+          :state (->State (->Pos nx ny) (-> agent-tex :state :previous-action)))))))
 
 (defn agent-texture [sheet width height]
   (let [tiles (texture! sheet :split width height)]

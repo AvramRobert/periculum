@@ -99,20 +99,9 @@
 (defn- echoed? [config]
   (some? (:echo config)))
 
-(defn- dispatched? [config]
-  (some? (:dispatches config)))
-
 (defn- parameters<- [config]
   (t/tuple
     (policy<- config)
-    (action<- config)
-    (reward<- config)
-    (transition<- config)
-    (terminal<- config)))
-
-(defn- parameters-rnd<- [config]
-  (t/tuple
-    eps-balanced
     (action<- config)
     (reward<- config)
     (transition<- config)

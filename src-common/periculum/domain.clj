@@ -1,9 +1,9 @@
 (ns periculum.domain
-  (:use [periculum.world])
-  (:use [periculum.more])
-  (:require [clj-tuple :as tuples])
-  (:require [clojure.core.match :refer [match]])
-  (:require [play-clj.math :as gmath]))
+  (:use [periculum.world]
+        [periculum.more])
+  (:require [clj-tuple :as tuples]
+            [play-clj.math :as gmath]
+            [clojure.core.match :refer [match]]))
 
 ;; Idea: I could represent the reward function differently.
 ;; Instead of punishing him for hitting something with some negative reward,
