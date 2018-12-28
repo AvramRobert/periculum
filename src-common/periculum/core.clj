@@ -11,6 +11,8 @@
             [periculum.domain :refer [->State]]
             [periculum.world :refer [->Pos]]))
 
+(declare periculum-game sprite-screen)
+
 (defn assoc-from [entity txture]
   (let [pos (block-pos (:position entity))]
     (assoc txture
@@ -136,6 +138,14 @@
                    #(assoc % :height (:height screen)
                              :width (:width screen)))))
 
+(defn reset-player [entities]
+  (let [{ox :x oy :y} (:position start)
+        {bx :x by :y} (block-pos ox oy)
+        pos (block-pos (:position start))]
+    (on-player entities #(assoc % :x bx
+                                  :y by
+                                  :state (->State (->Pos ox oy) :stand)))))
+
 (def rendering
   (fn [screen entities]
     (clear!)
@@ -143,57 +153,6 @@
       (->> entities
            (do-act)
            (render! screen)))))
-
-(declare periculum-game sprite-screen simple-screen)
-
-(defscreen simple-screen
-           :on-show
-           (fn [screen entities]
-             (update! screen :renderer (stage) :camera (orthographic))
-             (let [walls (->> world
-                              (filter #(= (:type %) :wall))
-                              (map wall-shape))
-                   floors (->> world
-                               (filter #(= (:type %) :floor))
-                               (map floor-shape))
-                   player (agent-shape 1 1)]
-               (flatten [(map #(assoc % :wall? true) walls)
-                         (map #(assoc % :floor? true) floors)
-                         [(player-entity player)]])))
-
-           :on-resize resize
-           :on-render rendering
-           :on-key-down
-           (fn [screen entities]
-             (let [key (:key screen)
-                   send! (send-record! periculum.play/expect-channel)
-                   do-act (comp apply-action supply-action)
-                   do-send (comp send! stop-record-path)]
-               (cond
-                 (= key (key-code :minus))
-                 (do-send entities)
-                 (= key (key-code :plus))
-                 (record-path entities)
-                 (= key (key-code :dpad-down))
-                 (do-act entities :stand)
-                 (= key (key-code :dpad-up))
-                 (do-act entities :jump-up)
-                 (= key (key-code :dpad-left))
-                 (do-act entities :walk-left)
-                 (= key (key-code :dpad-right))
-                 (do-act entities :walk-right)
-                 (= key (key-code :q))
-                 (do-act entities :jump-left)
-                 (= key (key-code :e))
-                 (do-act entities :jump-right)
-                 (= key (key-code :z))
-                 (do-act entities :run-jump-left)
-                 (= key (key-code :c))
-                 (do-act entities :run-jump-right)
-                 (= key (key-code :a))
-                 (do-act entities :run-left)
-                 (= key (key-code :d))
-                 (do-act entities :run-right)))))
 
 (defscreen sprite-screen
            :on-show
@@ -255,7 +214,9 @@
                  (= key (key-code :d))
                  (do-act entities :run-right)
                  (= key (key-code :u))
-                 (fly entities 1)))))
+                 (fly entities 1)
+                 (= key (key-code :r))
+                 (reset-player entities)))))
 
 (defgame periculum-game
          :on-create
