@@ -28,10 +28,6 @@
 (def H-max 4)
 (def T-apex 2)
 (def G (gravity H-max T-apex))
-(def Rewards {:tic   0                                      ;; change to -0.01 for ideal temporal punishment
-              :solid -1
-              :end   20})
-
 
 (def primitive-actions {:stand      (->Action 0 1 [0 0])
                         :walk-left  (->Action 1 1 [-1 0])
@@ -241,19 +237,16 @@
             (println "Unknown action: " action)
             (tuples/tuple 0 [state])))))))
 
-(defn- reward-com [world actions rewards terminal?]
+(defn- reward-com [world actions terminal?]
   (let [η (eta world actions)
         Ω (omega world actions)]
     (fn [state action]
-      (let [[time path] (Ω state action)
-            hits (->> path (map η) (flatten) (filter #(:solid? %)))
-            holes (filter #(hole? %) path)
-            end ((or-else (fn [_]
-                            (:end rewards)) 0) (find-some #(terminal? %) path))]
-        (+ (* time (:tic rewards))
-           (* (count hits) (:solid rewards))
-           (* (count holes) (:solid rewards))
-           end)))))
+      (let [[_ path]  (Ω state action)
+            hits      (->> path (map η) (flatten) (filter :solid?))
+            holes     (filter hole? path)
+            end?      (find-some terminal? path)
+            unharmed? (= 0 (count hits) (count holes))]
+        (if (and end? unharmed?) 1 -1)))))
 
 (defn- transition-com [world actions terminal?]
   (let [Ω (omega world actions)]
@@ -269,11 +262,9 @@
   "Given a platformer world and the terminal function, it returns a closure.
   The closure will, given state and an action, give the appropriate reward for each state-action pair"
   ([world terminal?]
-   (reward world primitive-actions Rewards terminal?))
+   (reward world primitive-actions terminal?))
   ([world actions terminal?]
-   (reward-com world actions Rewards terminal?))
-  ([world actions rewards terminal?]
-   (reward-com world actions rewards terminal?)))
+   (reward-com world actions terminal?)))
 
 (defn transition
   "Given a platformer world and a terminal function, it returns a closure.

@@ -492,6 +492,16 @@
   (q-learning policy (greedy greedy-by-max) action reward transition terminal?))
 
 
+(defn sarsa-min [policy
+                 action
+                 reward
+                 transition
+                 terminal?]
+  "Given a behaviour policy and the action, reward, transition and terminal functions,
+  it returns a closure. The closure will, given a starting state, starting data and episode
+  count, apply Q-learning with the greedy policy of choosing the action with the largest Q-value"
+  (q-learning policy (greedy greedy-by-min) action reward transition terminal?))
+
 ;; ========= Watkins' Q(λ) =========
 
 (defn- E-q-λ [data A' A*]

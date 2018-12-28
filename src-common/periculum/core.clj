@@ -140,10 +140,8 @@
 
 (defn reset-player [entities]
   (let [{ox :x oy :y} (:position start)
-        {bx :x by :y} (block-pos ox oy)
-        pos (block-pos (:position start))]
-    (on-player entities #(assoc % :x bx
-                                  :y by
+        {bx :x by :y} (block-pos ox oy)]
+    (on-player entities #(assoc % :x bx :y by
                                   :state (->State (->Pos ox oy) :stand)))))
 
 (def rendering
