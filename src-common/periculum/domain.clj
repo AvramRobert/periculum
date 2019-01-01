@@ -155,27 +155,41 @@
   ([pos lookup]
    ((descend lookup) pos empty-vec)))
 
+(defn blocked? [pos lookup]
+  (boolean (some :solid? (lookup pos))))
+
 (defn move [lookup]
   "Simulates a movement"
   (fn [pos action]
     (let [todo (deref-actions (tuples/tuple action) lookup)
           interpolated (<+> pos todo)
-          can-stand? #(solid-beneath? % lookup)]
-      (if (every? can-stand? interpolated)
-        (tuples/tuple 1 interpolated)
-        (let [solid (vec (take-while can-stand? interpolated))
-              non-solid (find-some #(not (can-stand? %)) interpolated)
-              [t descent] (fall non-solid lookup)]
-          (tuples/tuple t (into solid descent)))))))
+          can-stand?   #(solid-beneath? % lookup)
+          blocked?     #(blocked? % lookup)
+          not-blocked?  (comp not blocked?)]
+      (cond
+        (and (every? can-stand? interpolated)
+             (every? not-blocked? interpolated)) [1 interpolated]
+        (and (every? can-stand? interpolated)
+             (some blocked? interpolated)) [1 (take-while not-blocked? interpolated)]
+        :else (let [solid (vec (take-while can-stand? interpolated))
+                    non-solid (find-some #(not (can-stand? %)) interpolated)
+                    [t descent] (fall non-solid lookup)]
+                (tuples/tuple t (into solid descent)))))))
 
 (defn jump [lookup]
-  "Simluates a jump"
+  "Simulates a jump"
   (fn [pos other-action]
     (let [T-apex (:time (lookup :jump))
           other (tuples/tuple other-action)
           ascent ((ascend lookup) pos other)
-          [t descent] (fall (last ascent) lookup other)]
-      (tuples/tuple (+ t T-apex) (into ascent descent)))))
+          ascension (->> (fall (last ascent) lookup other)
+                         (second)
+                         (into ascent)
+                         (take-while #(not (blocked? % lookup)))
+                         (vec))
+          path (if (solid-beneath? (last ascension) lookup) ascension
+                   (->> (fall (last ascension) lookup) (second) (into ascension)))]
+      [T-apex path])))
 
 
 (defn to-state [time-position action]

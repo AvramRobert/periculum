@@ -76,7 +76,6 @@
 (def Ω (d/omega world test-actions))
 (def reward (d/reward world
                       test-actions
-                      test-rewards
                       #(= (:position %) (pos 12 1))))
 (def transition (d/transition world
                               test-actions
