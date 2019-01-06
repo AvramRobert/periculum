@@ -62,63 +62,64 @@
 (defn run-mc [episodes]
   (triangle-path
     (dsl/deflearn
-      :world world
-      :action actf
-      :transition transf
-      :terminal termf
-      :reward rewf
-      :algorithm monte-carlo
-      :gamma 1.0
-      :start (->cell 0 0)
-      :episodes episodes
-      :policy (eps-greedy 0.6 greedy-by-min))))
+      {:world world
+       :action actf
+       :transition transf
+       :terminal termf
+       :reward rewf
+       :alpha 0.1
+       :algorithm monte-carlo
+       :gamma 1.0
+       :start (->cell 0 0)
+       :episodes episodes
+       :policy (eps-greedy 0.6 greedy-by-min)})))
 
 ;; SARSA-1 works pretty well with this MDP
 (defn run-sarsa-1 [eps]
   (triangle-path
     (dsl/deflearn
-      :world world
-      :action actf
-      :transition transf
-      :terminal termf
-      :reward rewf
-      :algorithm sarsa-1
-      :gamma 1.0
-      :alpha 0.2
-      :start (->cell 0 0)
-      :episodes eps
-      :policy (GLIE-eps-greedy 0.6 greedy-by-min))))
+      {:world world
+       :action actf
+       :transition transf
+       :terminal termf
+       :reward rewf
+       :algorithm sarsa-1
+       :gamma 1.0
+       :alpha 0.2
+       :start (->cell 0 0)
+       :episodes eps
+       :policy (GLIE-eps-greedy 0.6 greedy-by-min)})))
 
-;; SARSA λ works preety well with this MDP
+;; SARSA λ works pretty well with this MDP
 (defn run-sarsa-λ [eps]
   (triangle-path
     (dsl/deflearn
-      :world world
-      :action actf
-      :transition transf
-      :terminal termf
-      :reward rewf
-      :algorithm sarsa-λ
-      :gamma 1.0
-      :alpha 0.3
-      :lambda 0.4
-      :start (->cell 0 0)
-      :episodes eps
-      :policy (eps-greedy 0.6 greedy-by-min))))
+      {:world world
+       :action actf
+       :transition transf
+       :terminal termf
+       :reward rewf
+       :algorithm sarsa-λ
+       :gamma 1.0
+       :alpha 0.3
+       :lambda 0.4
+       :start (->cell 0 0)
+       :episodes eps
+       :policy (eps-greedy 0.6 greedy-by-min)})))
 
 ;; Q-Learning works very well with this MDP
 (defn run-q-learning [eps]
   (triangle-path
     (dsl/deflearn
-      :world world
-      :action actf
-      :transition transf
-      :terminal termf
-      :reward rewf
-      :algorithm (fn [policy action-f reward-f transition-f terminal?]
-                   (q-learning policy (greedy greedy-by-min) action-f reward-f transition-f terminal?))
-      :gamma 0.9
-      :alpha 0.5
-      :start (->cell 0 0)
-      :episodes eps
-      :policy (eps-greedy 0.6 greedy-by-min))))
+      {:world world
+       :action actf
+       :transition transf
+       :terminal termf
+       :reward rewf
+       :algorithm (fn [policy action-f reward-f transition-f terminal?]
+                    (q-learning policy (greedy greedy-by-min) action-f reward-f transition-f terminal?))
+       :gamma 0.9
+       :alpha 0.5
+       :start (->cell 0 0)
+       :episodes eps
+       :policy (eps-greedy 0.6 greedy-by-min)})))
