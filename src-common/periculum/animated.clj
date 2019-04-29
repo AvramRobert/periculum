@@ -8,7 +8,6 @@
     [play-clj.math :as gmath]
     [play-clj.g2d :refer [texture texture!]]
     [periculum.play :as play]
-    [clj-tuple :as tuples]
     [periculum.rl :as rl]))
 
 (def ^:const delta (/ 1 20))
@@ -180,26 +179,6 @@
   ([entities action]
    (on-player entities (fn [e]
                          (when-complete e #(select-action % action))))))
-
-(defn record-path [entities]
-  (println "RECORDING")
-  (on-player entities #(assoc %
-                        :record? true
-                        :recorded-path (tuples/tuple (rl/->Pair (:state %) (:current-action %))))))
-
-(defn stop-record-path [entities]
-  (println "STOPPED RECORDING")
-  (on-player entities #(assoc % :record? false)))
-
-(defn send-record! [channel]
-  (fn [entities]
-    (on-player entities
-               (fn [e]
-                 (when-let [path (:recorded-path e)]
-                   (do
-                     (async/go (async/>! channel path))
-                     (dissoc e :recorded-path)))
-                 e))))
 
 (defn player-entity [shape]
   (let [position (normalise (:x shape) (:y shape))]

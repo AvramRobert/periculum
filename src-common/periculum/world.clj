@@ -7,15 +7,9 @@
 
 (defrecord Pos [x y])
 
-(defrecord Struct [length
-                   height
-                   start-pos])
+(defrecord Struct [length height start-pos])
 
-(defrecord Entity [label
-                   type
-                   position
-                   components
-                   solid?])
+(defrecord Entity [label type position components solid?])
 
 ;; Floor: ffff00ff ;; ff6600
 ;; Wall:  ff0000ff ;; ff0000

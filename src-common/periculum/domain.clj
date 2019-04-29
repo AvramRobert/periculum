@@ -5,19 +5,8 @@
             [play-clj.math :as gmath]
             [clojure.core.match :refer [match]]))
 
-;; Idea: I could represent the reward function differently.
-;; Instead of punishing him for hitting something with some negative reward,
-;; I could instead simplify the reward to a binary representation.
-;; Award him a reward of 0, if at some point he had hit something,
-;; and a reward of 1 if he followed a trajectory, which didn't harm him at all.
-;; Or similarly, punish him with -1 if he followed some path that hurt him, 1 (or 2) otherwise
-
-(defrecord Action [velocity
-                   time
-                   orientation])
-
-(defrecord State [position
-                  previous-action])
+(defrecord Action [velocity time orientation])
+(defrecord State [position previous-action])
 
 (defn gravity [h-max t-apex]
   (/ (* 2 h-max) (Math/pow t-apex 2)))
@@ -36,18 +25,6 @@
                         :run-right  (->Action 2 1 [1 0])
                         :jump       (->Action (Math/round ^Float (jump-velocity G H-max)) T-apex [0 1])
                         :fall       (->Action G 1 [0 -1])})
-
-
-(def all-actions [:stand
-                  :walk-left
-                  :walk-right
-                  :run-left
-                  :run-right
-                  :jump-left
-                  :jump-right
-                  :jump-up
-                  :run-jump-left
-                  :run-jump-right])
 
 (defn update-pos [pos amount orient]
   (let [xed (assoc pos :x (+ (:x pos) (* amount (nth orient 0))))

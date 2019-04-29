@@ -1,6 +1,5 @@
 (defproject periculum "0.0.1-SNAPSHOT"
   :description "FIXME: write description"
-
   :dependencies [[com.badlogicgames.gdx/gdx "1.8.0"]
                  [com.badlogicgames.gdx/gdx-backend-lwjgl "1.8.0"]
                  [com.badlogicgames.gdx/gdx-box2d "1.8.0"]
@@ -11,7 +10,7 @@
                   :classifier "natives-desktop"]
                  [com.badlogicgames.gdx/gdx-platform "1.8.0"
                   :classifier "natives-desktop"]
-                 [org.clojure/clojure "1.7.0"]
+                 [org.clojure/clojure "1.8.0"]
                  [play-clj "1.0.0"]
                  [org.clojure/test.check "0.9.0"]
                  [clj-tuple "0.2.2"]
@@ -19,11 +18,8 @@
                  [org.clojure/core.match "0.3.0-alpha4"]
                  [org.clojure/core.async "0.2.374"]
                  [net.mikera/imagez "0.10.0"]
-                 [incanter "1.5.7"]
                  [criterium "0.4.4"]
-                 [primitive-math "0.1.5"]
-                 [semantic-csv "0.1.0"]
-                 [org.clojure/data.csv "0.1.3"]]
+                 [primitive-math "0.1.5"]]
 
 
   :source-paths ["src" "src-common"]
