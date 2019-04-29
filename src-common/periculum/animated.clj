@@ -211,8 +211,3 @@
       :state (->State position :stand)
       :current-action :stand
       :t 0.0)))
-
-
-
-
-

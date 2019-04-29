@@ -11,7 +11,7 @@
             [periculum.exports :as e]
             [periculum.more :as m]))
 
-(def ^:const local-path "/home/robert/Repositories/periculum/resources/")
+(def ^:const local-path "./resources/")
 
 (def result-channel (async/chan))
 (def expect-channel (async/chan))
@@ -96,11 +96,11 @@
   (async/>!! result-channel data))
 
 (defn learn [world config]
-  "Delegates to `deflearn` but presets the primites to those of the platformer MDP"
+  "Delegates to `deflearn` but presets the primitives to those of the platformer MDP"
   (deflearn (add-locals world config)))
 
 (defn learn-cont [world config]
-  "Delegates to `deflearn-cont` but presets the primites to those of the platformer MDP"
+  "Delegates to `deflearn-cont` but presets the primitives to those of the platformer MDP"
   (deflearn-cont (add-locals world config)))
 
 (defn magrl [world config]
