@@ -597,3 +597,19 @@
    (compute-path greedy-by-max transition reward terminal?))
   ([argmax transition reward terminal?]
    (go-greedy argmax transition reward terminal?)))
+
+(defn best-move-max [data]
+  "Given RL data, it returns a function that given a state,
+   will return the best action of that state relative to
+   the learned data.
+   It picks the action with the highest value"
+  (fn [S]
+    (-> data (get-in [:q-values S] {}) (greedy-by-max))))
+
+(defn best-move-min [data]
+  "Given RL data, it returns a function that given a state,
+   will return the best action of that state relative to
+   the learned data.
+   It picks the action with the lowest value"
+  (fn [S]
+    (-> data (get-in [:q-values S] {}) (greedy-by-min))))
