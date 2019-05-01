@@ -9,7 +9,10 @@
     item))
 
 (defn start<- [config]
-  (extract config :start "A starting state"))
+  (cond
+    (:start config)  (constantly (:start config))
+    (:vstart config) (:vstart config)
+    :else (assert nil "Please specify either a starting state or a varying starting state")))
 
 (defn policy<- [config]
   (extract config :policy "A policy"))
@@ -105,20 +108,21 @@
     :lambda => number
     :algorithm => function
     :episodes => number
-    :start => your start state
+    :start => your starting state
     :action => function
     :reward => function
     :transition => function
     :terminal => predicate
+    + :vstart => function with one arugment (the current episode) that generates a starting state (for varying initial states)
     + :dispatches => vector of the map: {:channel  core.async/channel
                                          :schedule (Int -> Bool)
                      (`schedule` is a predicate applied on the current episode
                       `channel` is a core.async channel that receives the data (see periculum.rl/empty-data) of the current learning process
                                 every time the `schedule` predicate yields true)
-    + :echo => core.async channel (pushes the q-values to the paltformer visualiser)"
+    + :echo => core.async channel (pushes the q-values to the platformer visualiser)"
   (let [data       (data<- config)
         eps        (episodes<- config)
-        start      (start<- config)
+        gen-start  (start<- config)
         echo       (on-echo config)
         algorithm  (algorithm<- config)
         dispatches (dispatches<- config)
@@ -126,4 +130,4 @@
     (fn []
       (let [f    (rl/control-> algorithm data dispatches)
             run! (comp echo f)]
-        (run! start eps)))))
+        (run! gen-start eps)))))

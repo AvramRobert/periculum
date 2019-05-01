@@ -49,7 +49,7 @@
   ([algorithm config]
    (control-> algorithm config (t/tuple)))
   ([algorithm config dispatches]
-   (fn [start eps]
+   (fn [gen-start eps]
      (async/thread
        (println "Executing")
        (letfn [(destroy-return! [passing]
@@ -61,7 +61,7 @@
              (fn [data episode]
                (show-episode! episode 100)
                (dispatch! data episode dispatches)
-               (algorithm data start episode)) config)
+               (algorithm data (gen-start episode) episode)) config)
            (destroy-return!)
            (spyr (fn [_] (println "Done")))))))))
 
@@ -392,8 +392,8 @@
                         reward
                         transition]
   (fn [data S episode]
-    (let [A (policy S (action S) data episode)
-          R (reward S A)
+    (let [A  (policy S (action S) data episode)
+          R  (reward S A)
           S' (transition S A)
           A' (greedy-policy S' (action S') data episode)]
       (-> data

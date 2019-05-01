@@ -7,15 +7,12 @@
 
 (def outcomes {:X :O :draw :continue})
 
-(defn new-game
-  ([]
-    (new-game (rand-nth [:X :O])))
-  ([player]
-   {:board [[nil nil nil]
-            [nil nil nil]
-            [nil nil nil]]
-    :player player
-    :turn   :X}))
+(defn new-game [player]
+  {:board [[nil nil nil]
+           [nil nil nil]
+           [nil nil nil]]
+   :player player
+   :turn   :X})
 
 (defn opponent [player]
   (case player
@@ -96,7 +93,7 @@
                  :reward     reward
                  :transition transition
                  :terminal   terminal?
-                 :start      (new-game :X)
+                 :vstart     #(if (even? %) (new-game :X) (new-game :O))
                  :algorithm  rl/sarsa-max
                  :policy     (rl/eps-greedy 0.7)
                  :alpha      0.2
@@ -118,16 +115,27 @@
 
 (defn show-game [{:keys [board turn]}]
   (str "\n"
+       "-------------"
+       "\n"
        (show-board board)
+       "\n"
+       "-------------"
        "\n\n"
-       (show-cell turn) "'s turn"
-       "\n"))
+       "-> " (show-cell turn) "'s turn"))
+
+(defn parse-move [string-move]
+  (try
+    (let [cell (->> #" "
+                    (s/split string-move)
+                    (mapv #(Integer/parseInt %)))]
+      (when (= 2 (count cell)) cell))
+    (catch Exception _ nil)))
 
 (defn translate [string-move board]
-  (let [[x y] (->> #" " (s/split string-move) (map #(Integer/parseInt %)))]
+  (when-let [[x y] (parse-move string-move)]
     (when (and (<= 0 x 2)
                (<= 0 y 2)
-               (nil? (some-> board (nth y) (nth x)))) [x y])))
+               (nil? (get-in board [y x] nil))) [x y])))
 
 (defn read-move [board]
   (-> (read-line) (translate board) (or (read-move board))))
