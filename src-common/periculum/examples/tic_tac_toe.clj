@@ -2,7 +2,8 @@
   (:require [periculum.dsl :refer [deflearn]]
             [periculum.rl :as rl]
             [periculum.more :refer [find-some]]
-            [clojure.core.async :as async]))
+            [clojure.core.async :as async]
+            [clojure.string :as s]))
 
 (def outcomes {:X :O :draw :continue})
 
@@ -14,11 +15,11 @@
 
 (defn opponent [player]
   (case player
-    :X :Y
-    :Y :X))
+    :X :O
+    :O :X))
 
 (defn player? [elem]
-  (or (= :X elem) (= :Y elem)))
+  (or (= :X elem) (= :O elem)))
 
 (defn draw? [elem]
   (= :draw elem))
@@ -81,16 +82,77 @@
       [:nothing]))
 
 (defn terminal? [{:keys [board]}]
-  (contains? #{:X :Y :draw} (outcome board)))
+  (contains? #{:X :O :draw} (outcome board)))
 
-(def tic-tac-toe
-  (deflearn {:action     actions
-             :reward     reward
-             :transition transition
-             :terminal   terminal?
-             :start      game
-             :algorithm  rl/sarsa-max
-             :policy     (rl/eps-greedy 0.7)
-             :alpha      0.3
-             :gamma      1.0
-             :episodes   10000}))
+(defn tic-tac-toe [episodes]
+  (letfn [(run [f] (async/<!! (f)))]
+    (run
+      (deflearn {:action     actions
+                 :reward     reward
+                 :transition transition
+                 :terminal   terminal?
+                 :start      game
+                 :algorithm  rl/sarsa-max
+                 :policy     (rl/eps-greedy 0.7)
+                 :alpha      0.3
+                 :gamma      1.0
+                 :episodes   episodes}))))
+
+;; --------------- TIC TAC TOE terminal game ---------------
+
+(defn show-player [player]
+  (case player
+    :X "X"
+    :O "O"
+    " "))
+
+(defn show-board [board]
+  (let [cell (fn [row n] (show-player (row n)))
+        row #(str "| " (cell % 0) " | " (cell % 1) " | " (cell % 2) " |")]
+    (->> board (map row) (s/join "\n"))))
+
+(defn show-game [{:keys [board player]}]
+  (str "\n"
+       (show-board board)
+       "\n\n"
+       "Player: " (show-player player)
+       "\n"))
+
+(defn translate [string-move board]
+  (let [[x y] (->> #" " (s/split string-move) (map #(Integer/parseInt %)))]
+    (when (and (<= 0 x 2)
+               (<= 0 y 2)
+               (nil? (some-> board (nth y) (nth x)))) [x y])))
+
+(defn read-move [board]
+  (-> (read-line) (translate board) (or (read-move board))))
+
+(defn results [game]
+  (case (outcome (:board game))
+    :X    "Player X wins"
+    :O    "Player O wins"
+    :draw "It's a draw"
+    "I don't know this"))
+
+(defn play [opponent player]
+  "Allows you to play a game of tic-tac-toe against a trained opponent.
+
+  Takes an `opponent` (the learned data returned by any of the RL algorithm from the rl namespace)
+  and a `player` (either :X or :O, indicating which one you would like to play)
+  and runs a game of tic-tac-toe.
+
+  Every turn, you'll be required to input a position where to place your token.
+  The position format is two integers separated by a space, e.g. 0 0 or 1 0.
+
+  To get an opponent, train some experience by running `tic-tac-toe`.
+
+  Example: (play (tic-tac-toe 10000) :X) "
+  (let [choose-best   (rl/best-move-max opponent actions)
+        player-turn? #(= player (:player %))]
+    (loop [current-game game]
+      (println (show-game current-game))
+      (Thread/sleep 500)
+      (cond
+        (terminal? current-game)     (println (results current-game))
+        (player-turn?  current-game) (->> current-game (:board) (read-move) (transition current-game) (recur))
+        :otherwise                   (->> (choose-best current-game) (transition current-game) (recur))))))
