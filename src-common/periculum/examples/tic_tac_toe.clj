@@ -7,11 +7,15 @@
 
 (def outcomes {:X :O :draw :continue})
 
-(def game
-  {:board [[nil nil nil]
-           [nil nil nil]
-           [nil nil nil]]
-   :player :X})
+(defn new-game
+  ([]
+    (new-game (rand-nth [:X :O])))
+  ([player]
+   {:board [[nil nil nil]
+            [nil nil nil]
+            [nil nil nil]]
+    :player player
+    :turn   :X}))
 
 (defn opponent [player]
   (case player
@@ -59,9 +63,10 @@
       (every? draw? outcomes) :draw
       :otherwise              :continue)))
 
-(defn transition [{:keys [board player]} [x y]]
-  {:board  (assoc-in board [y x] player)
-   :player (opponent player)})
+(defn transition [state [x y]]
+  (-> state
+      (assoc-in [:board y x] (:turn state))
+      (update :turn opponent)))
 
 (defn reward [{:keys [player] :as state} action]
   (case (->> action (transition state) (:board) (outcome))
@@ -91,31 +96,31 @@
                  :reward     reward
                  :transition transition
                  :terminal   terminal?
-                 :start      game
+                 :start      (new-game :X)
                  :algorithm  rl/sarsa-max
                  :policy     (rl/eps-greedy 0.7)
-                 :alpha      0.3
+                 :alpha      0.2
                  :gamma      1.0
                  :episodes   episodes}))))
 
 ;; --------------- TIC TAC TOE terminal game ---------------
 
-(defn show-player [player]
+(defn show-cell [player]
   (case player
     :X "X"
     :O "O"
     " "))
 
 (defn show-board [board]
-  (let [cell (fn [row n] (show-player (row n)))
+  (let [cell (fn [row n] (show-cell (row n)))
         row #(str "| " (cell % 0) " | " (cell % 1) " | " (cell % 2) " |")]
     (->> board (map row) (s/join "\n"))))
 
-(defn show-game [{:keys [board player]}]
+(defn show-game [{:keys [board turn]}]
   (str "\n"
        (show-board board)
        "\n\n"
-       "Player: " (show-player player)
+       (show-cell turn) "'s turn"
        "\n"))
 
 (defn translate [string-move board]
@@ -134,7 +139,7 @@
     :draw "It's a draw"
     "I don't know this"))
 
-(defn play [opponent player]
+(defn play [rl-opponent player]
   "Allows you to play a game of tic-tac-toe against a trained opponent.
 
   Takes an `opponent` (the learned data returned by any of the RL algorithm from the rl namespace)
@@ -147,9 +152,9 @@
   To get an opponent, train some experience by running `tic-tac-toe`.
 
   Example: (play (tic-tac-toe 10000) :X) "
-  (let [choose-best   (rl/best-move-max opponent actions)
-        player-turn? #(= player (:player %))]
-    (loop [current-game game]
+  (let [choose-best   (rl/best-move-max rl-opponent actions)
+        player-turn? #(= player (:turn %))]
+    (loop [current-game (new-game (opponent player))]
       (println (show-game current-game))
       (Thread/sleep 500)
       (cond
