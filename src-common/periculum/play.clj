@@ -59,7 +59,7 @@
                                                                         (<= (-> state :position :y) 7))))
                    :start (->State (->Pos 4 24) :stand)}})
 
-(def level :scene0_stage2)
+(def level :scene0_stage0)
 (def world (-> levels (get level) (:world)))
 (def start (-> levels (get level) (:start)))
 

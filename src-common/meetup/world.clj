@@ -5,6 +5,18 @@
             [clojure.core.async :as async]
             [periculum.rl :as rl]))
 
+(defn eps-greedy [eps]
+  (fn [S As data]
+    (if-let [Q-sa (get data S)]
+      (let [p-random (/ eps (count As))
+            p-greedy (+ (- 1.0 eps) p-random)
+            greedy-A (or (some->> Q-sa (periculum.more/max-by val) (keys) (first))
+                         (rand-nth As))]
+        (->> As
+             (map #(if (= greedy-A %) p-greedy p-random))
+             (periculum.more/choose-dist As)))
+      (rand-nth As))))
+
 (def start-state start)
 
 (defn terminal? [state]
