@@ -1,17 +1,19 @@
 (ns meetup.world
   (:require [periculum.domain :as d]
-            [periculum.play :refer [world start]]
-            [periculum.dsl :refer [deflearn]]))
+            [periculum.play :refer [world start result-channel]]
+            [periculum.dsl :refer [deflearn]]
+            [clojure.core.async :as async]
+            [periculum.rl :as rl]))
 
 (def start-state start)
 
 (defn terminal? [state]
-  (d/terminal? world))
+  ((d/terminal? world) state))
 
 (defn transition [state action]
-  (d/transition world d/actions terminal?))
+  ((d/transition world terminal?) state action))
 
 (defn reward [state action]
-  (d/reward world terminal?))
+  ((d/reward world terminal?) state action))
 
 (defn actions [S] (d/actions S))
