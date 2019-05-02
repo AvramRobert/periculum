@@ -7,11 +7,10 @@
 
 (def outcomes {:X :O :draw :continue})
 
-(defn new-game [player]
+(def new-game
   {:board [[nil nil nil]
            [nil nil nil]
            [nil nil nil]]
-   :player player
    :turn   :X})
 
 (defn opponent [player]
@@ -60,18 +59,18 @@
       (every? draw? outcomes) :draw
       :otherwise              :continue)))
 
-(defn transition [state [x y]]
-  (-> state
-      (assoc-in [:board y x] (:turn state))
-      (update :turn opponent)))
+(defn transition [{:keys [board turn] :as a} [x y]]
+  {:board (assoc-in board [y x] turn)
+   :turn  (opponent turn)})
 
-(defn reward [{:keys [player] :as state} action]
-  (case (->> action (transition state) (:board) (outcome))
-    :X        (if (= player :X) 1 -1)
-    :O        (if (= player :O) 1 -1)
-    :draw     0
-    :continue 0
-    0))
+(defn reward [player]
+  (fn [state action]
+    (case (->> action (transition state) (:board) (outcome))
+      :X        (if (= player :X) 1 -1)
+      :O        (if (= player :O) 1 -1)
+      :draw     0
+      :continue 0
+      0)))
 
 (defn actions [{:keys [board]}]
   (or (->> board
@@ -86,19 +85,27 @@
 (defn terminal? [{:keys [board]}]
   (contains? #{:X :O :draw} (outcome board)))
 
-(defn tic-tac-toe [episodes]
+(defn- ptic-tac-toe [player episodes]
   (letfn [(run [f] (async/<!! (f)))]
     (run
       (deflearn {:action     actions
-                 :reward     reward
+                 :reward     (reward player)
                  :transition transition
                  :terminal   terminal?
-                 :vstart     #(if (even? %) (new-game :X) (new-game :O))
+                 :start     new-game
                  :algorithm  rl/sarsa-max
                  :policy     (rl/eps-greedy 0.7)
                  :alpha      0.2
                  :gamma      1.0
                  :episodes   episodes}))))
+
+(defn tic-tac-toe [episodes]
+  (let [half  (/ episodes 2)
+        X-exp (ptic-tac-toe :X half)
+        O-exp (ptic-tac-toe :O half)]
+    (->> (:q-values O-exp)
+         (merge-with merge (:q-values X-exp))
+         (assoc X-exp :q-values))))
 
 ;; --------------- TIC TAC TOE terminal game ---------------
 
@@ -162,7 +169,7 @@
   Example: (play (tic-tac-toe 10000) :X) "
   (let [choose-best   (rl/best-move-max rl-opponent actions)
         player-turn? #(= player (:turn %))]
-    (loop [current-game (new-game (opponent player))]
+    (loop [current-game new-game]
       (println (show-game current-game))
       (Thread/sleep 500)
       (cond
